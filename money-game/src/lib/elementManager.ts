@@ -6,7 +6,9 @@ import {
   ElementGenerationResult, 
   StoredCharacter, 
   StoredScenario, 
-  StoredObject 
+  StoredObject,
+  AssetGenerationSummary,
+  AssetInfo
 } from '@/types/game';
 
 export class ElementManager {
@@ -35,29 +37,44 @@ export class ElementManager {
     // 2. Buscar elementos existentes para reutilizar
     const reusedElements = await this.findReusableElements(extractedElements);
     
-    // 3. Crear nuevos elementos para los que no se encontraron coincidencias
-    const newElements = await this.createNewElements(extractedElements, reusedElements);
+    // 3. Crear nuevos elementos Y generar sus assets individuales
+    const newElements = await this.createNewElementsWithAssets(extractedElements, reusedElements);
     
-    // 4. Generar imagen compuesta de todos los elementos
-    const compositeImage = await this.generateCompositeImage(
-      [...reusedElements.characters, ...newElements.characters],
-      [...reusedElements.scenarios, ...newElements.scenarios],
-      [...reusedElements.objects, ...newElements.objects],
+    // 4. Marcar elementos reutilizados como usados
+    this.markElementsAsUsed(reusedElements);
+
+    // 5. DESPUÉS generar imagen compuesta utilizando todos los assets ya creados
+    const allCharacters = [...reusedElements.characters, ...newElements.characters];
+    const allScenarios = [...reusedElements.scenarios, ...newElements.scenarios];
+    const allObjects = [...reusedElements.objects, ...newElements.objects];
+    
+    const compositeResult = await this.generateCompositeImageFromAssets(
+      allCharacters,
+      allScenarios,
+      allObjects,
       prompt
     );
 
-    // 5. Marcar elementos reutilizados como usados
-    this.markElementsAsUsed(reusedElements);
+    // 6. Crear resumen detallado de assets para visualización
+    const assetsGenerated = this.createAssetsSummary(
+      newElements,
+      reusedElements,
+      allCharacters,
+      allScenarios,
+      allObjects,
+      prompt
+    );
 
     const result: ElementGenerationResult = {
       extractedElements,
       reusedElements,
       newElements,
-      compositeImage
+      compositeImage: compositeResult?.image,
+      compositeDescription: compositeResult?.description,
+      assetsGenerated
     };
 
-    console.log(`📚 Resultado: ${newElements.characters.length} personajes nuevos, ${newElements.scenarios.length} escenarios nuevos, ${newElements.objects.length} objetos nuevos`);
-    console.log(`♻️ Reutilizados: ${reusedElements.characters.length} personajes, ${reusedElements.scenarios.length} escenarios, ${reusedElements.objects.length} objetos`);
+    console.log(`📚 Assets procesados: ${assetsGenerated.totalAssetsGenerated} nuevos, ${assetsGenerated.totalAssetsReused} reutilizados`);
 
     return result;
   }
@@ -126,9 +143,9 @@ export class ElementManager {
   }
 
   /**
-   * Crear nuevos elementos para los que no se encontraron coincidencias
+   * Crear nuevos elementos Y generar sus assets individuales
    */
-  private async createNewElements(
+  private async createNewElementsWithAssets(
     extracted: ExtractedElements,
     reused: { characters: StoredCharacter[]; scenarios: StoredScenario[]; objects: StoredObject[]; }
   ): Promise<{
@@ -142,14 +159,16 @@ export class ElementManager {
       objects: [] as StoredObject[]
     };
 
-    // Crear personajes nuevos
+    console.log('🎨 Iniciando creación de assets individuales con Nano Banana...');
+
+    // PASO 1: Crear personajes nuevos con sus assets individuales
     for (const char of extracted.characters) {
       const alreadyExists = reused.characters.some(reusedChar => 
         this.calculateSimilarity(reusedChar.name, char.name) > 0.7
       );
       
       if (!alreadyExists) {
-        console.log(`✨ Creando nuevo personaje: ${char.name}`);
+        console.log(`✨ Creando personaje: ${char.name} + generando asset individual`);
         
         // Generar tags automáticamente
         const tags = this.library.generateTags(char.name, char.description, 'character');
@@ -161,43 +180,50 @@ export class ElementManager {
           char.description
         );
         
+        // Generar características únicas para reconocimiento
+        const uniqueTraits = this.generateUniqueTraits(char.name, char.description, 'character');
+        const visualSignature = this.generateVisualSignature(char.name, enhancement?.appearance || char.appearance, 'character');
+        
         const newCharacter = this.library.addCharacter({
           name: char.name,
           description: char.description,
           personality: char.personality,
           relationship: 'neutral',
+          firstMet: 0, // Se actualizará cuando aparezca en el juego
+          interactions: 0,
           relevantTo: [char.role],
-          tags,
-          appearance: enhancement?.appearance || char.appearance,
+          tags: [...tags, ...uniqueTraits],
+          appearance: `${enhancement?.appearance || char.appearance}. DISTINCTIVE FEATURES: ${visualSignature}`,
           background: enhancement?.background || `Personaje relacionado con ${char.role}`
         });
 
-        // Generar imagen individual del personaje
-        if (newCharacter.appearance) {
-          const characterImage = await this.imageGenerator.generateCharacterImage(
-            newCharacter.name,
-            newCharacter.appearance,
-            "urban environment"
-          );
-          
-          if (characterImage) {
-            this.library.updateElementImage(newCharacter.id, 'character', characterImage);
-            newCharacter.imageUrl = characterImage;
-          }
+        // 🍌 GENERAR ASSET INDIVIDUAL del personaje con Nano Banana
+        console.log(`🍌 Generando asset individual para personaje: ${newCharacter.name}`);
+        const characterAsset = await this.imageGenerator.generateLibraryElementImage(
+          newCharacter.name,
+          newCharacter.description,
+          'character',
+          newCharacter.appearance
+        );
+        
+        if (characterAsset) {
+          await this.library.updateElementImage(newCharacter.id, 'character', characterAsset);
+          newCharacter.imageUrl = await this.library.getImageUrl(newCharacter.imageUrl || '') || undefined;
+          console.log(`✅ Asset del personaje ${newCharacter.name} creado y almacenado`);
         }
 
         newElements.characters.push(newCharacter);
       }
     }
 
-    // Crear escenarios nuevos
+    // PASO 2: Crear escenarios nuevos con sus assets individuales
     for (const scenario of extracted.scenarios) {
       const alreadyExists = reused.scenarios.some(reusedScenario => 
         this.calculateSimilarity(reusedScenario.name, scenario.name) > 0.7
       );
       
       if (!alreadyExists) {
-        console.log(`✨ Creando nuevo escenario: ${scenario.name}`);
+        console.log(`✨ Creando escenario: ${scenario.name} + generando asset individual`);
         
         const tags = this.library.generateTags(scenario.name, scenario.description, 'scenario');
         
@@ -207,42 +233,51 @@ export class ElementManager {
           scenario.description
         );
         
+        // Generar características únicas para el escenario
+        const uniqueTraits = this.generateUniqueTraits(scenario.name, scenario.description, 'scenario');
+        const visualSignature = this.generateVisualSignature(scenario.name, enhancement?.visualDetails || scenario.visualDetails, 'scenario');
+        
         const newScenario = this.library.addScenario({
           name: scenario.name,
           description: scenario.description,
           type: scenario.type,
           riskLevel: 'medium',
-          tags,
+          firstEncountered: 0, // Se actualizará cuando aparezca en el juego
+          timesVisited: 0,
+          relatedCharacters: [],
+          relatedObjects: [],
+          tags: [...tags, ...uniqueTraits],
           atmosphere: enhancement?.atmosphere || scenario.atmosphere,
-          visualDetails: enhancement?.visualDetails || scenario.visualDetails
+          visualDetails: `${enhancement?.visualDetails || scenario.visualDetails}. DISTINCTIVE FEATURES: ${visualSignature}`
         });
 
-        // Generar imagen del escenario
-        if (newScenario.visualDetails) {
-          const scenarioImage = await this.imageGenerator.generateLocationImage(
-            newScenario.name,
-            newScenario.visualDetails,
-            this.determineTimeOfDay(newScenario.atmosphere)
-          );
-          
-          if (scenarioImage) {
-            this.library.updateElementImage(newScenario.id, 'scenario', scenarioImage);
-            newScenario.imageUrl = scenarioImage;
-          }
+        // 🍌 GENERAR ASSET INDIVIDUAL del escenario con Nano Banana
+        console.log(`🍌 Generando asset individual para escenario: ${newScenario.name}`);
+        const scenarioAsset = await this.imageGenerator.generateLibraryElementImage(
+          newScenario.name,
+          newScenario.description,
+          'scenario',
+          newScenario.visualDetails
+        );
+        
+        if (scenarioAsset) {
+          await this.library.updateElementImage(newScenario.id, 'scenario', scenarioAsset);
+          newScenario.imageUrl = await this.library.getImageUrl(newScenario.imageUrl || '') || undefined;
+          console.log(`✅ Asset del escenario ${newScenario.name} creado y almacenado`);
         }
 
         newElements.scenarios.push(newScenario);
       }
     }
 
-    // Crear objetos nuevos
+    // PASO 3: Crear objetos nuevos con sus assets individuales
     for (const obj of extracted.objects) {
       const alreadyExists = reused.objects.some(reusedObj => 
         this.calculateSimilarity(reusedObj.name, obj.name) > 0.8
       );
       
       if (!alreadyExists) {
-        console.log(`✨ Creando nuevo objeto: ${obj.name}`);
+        console.log(`✨ Creando objeto: ${obj.name} + generando asset individual`);
         
         const tags = this.library.generateTags(obj.name, obj.description, 'object');
         
@@ -252,72 +287,127 @@ export class ElementManager {
           obj.description
         );
         
+        // Generar características únicas para el objeto
+        const uniqueTraits = this.generateUniqueTraits(obj.name, obj.description, 'object');
+        const visualSignature = this.generateVisualSignature(obj.name, enhancement?.appearance || obj.appearance, 'object');
+        
         const newObject = this.library.addObject({
           name: obj.name,
           description: obj.description,
           type: obj.type,
           value: this.estimateObjectValue(obj.importance),
           usefulness: `Relacionado con ${obj.description}`,
-          tags,
-          appearance: enhancement?.appearance || obj.appearance,
+          obtainedOn: 0, // Se actualizará cuando aparezca en el juego
+          usedCount: 0,
+          tags: [...tags, ...uniqueTraits],
+          appearance: `${enhancement?.appearance || obj.appearance}. DISTINCTIVE FEATURES: ${visualSignature}`,
           story: enhancement?.story || `Objeto importante en la historia`
         });
+
+        // 🍌 GENERAR ASSET INDIVIDUAL del objeto con Nano Banana
+        console.log(`🍌 Generando asset individual para objeto: ${newObject.name}`);
+        const objectAsset = await this.imageGenerator.generateLibraryElementImage(
+          newObject.name,
+          newObject.description,
+          'object',
+          newObject.appearance
+        );
+        
+        if (objectAsset) {
+          await this.library.updateElementImage(newObject.id, 'object', objectAsset);
+          newObject.imageUrl = await this.library.getImageUrl(newObject.imageUrl || '') || undefined;
+          console.log(`✅ Asset del objeto ${newObject.name} creado y almacenado`);
+        }
 
         newElements.objects.push(newObject);
       }
     }
 
+    console.log(`🎨 Assets individuales completados: ${newElements.characters.length} personajes, ${newElements.scenarios.length} escenarios, ${newElements.objects.length} objetos`);
+    
     return newElements;
   }
 
   /**
-   * Generar imagen compuesta que incluye todos los elementos relevantes
+   * Generar imagen compuesta utilizando los assets ya creados
    */
-  private async generateCompositeImage(
+  private async generateCompositeImageFromAssets(
     characters: StoredCharacter[],
     scenarios: StoredScenario[],
     objects: StoredObject[],
     originalPrompt: string
-  ): Promise<string | undefined> {
+  ): Promise<{ image?: string; description: string } | undefined> {
     if (characters.length === 0 && scenarios.length === 0 && objects.length === 0) {
+      console.log('🎨 No hay elementos para imagen compuesta, saltando...');
       return undefined;
     }
 
-    console.log('🎨 Generando imagen compuesta con todos los elementos...');
+    console.log('🎨 Generando escena compuesta usando assets ya creados...');
 
-    // Preparar datos para el nuevo método de imagen compuesta
+    // Recopilar información de assets existentes
+    const availableAssets = {
+      characters: characters.filter(char => char.imageUrl).map(char => ({
+        name: char.name,
+        assetUrl: char.imageUrl!,
+        appearance: char.appearance || char.description
+      })),
+      scenarios: scenarios.filter(scenario => scenario.imageUrl).map(scenario => ({
+        name: scenario.name,
+        assetUrl: scenario.imageUrl!,
+        visualDetails: scenario.visualDetails || scenario.description,
+        atmosphere: scenario.atmosphere || 'neutral atmosphere'
+      })),
+      objects: objects.filter(obj => obj.imageUrl && (obj.value > 50 || obj.type === 'money' || obj.type === 'weapon')).map(obj => ({
+        name: obj.name,
+        assetUrl: obj.imageUrl!,
+        appearance: obj.appearance || obj.description
+      }))
+    };
+
+    console.log(`🍌 Assets disponibles para composición: ${availableAssets.characters.length} personajes, ${availableAssets.scenarios.length} escenarios, ${availableAssets.objects.length} objetos`);
+
+    // Preparar datos para composición (con referencia a assets)
     const characterData = characters.map(char => ({
       name: char.name,
-      appearance: char.appearance || char.description
+      appearance: char.appearance || char.description,
+      hasAsset: !!char.imageUrl
     }));
 
     const scenarioData = scenarios.map(scenario => ({
       name: scenario.name,
       visualDetails: scenario.visualDetails || scenario.description,
-      atmosphere: scenario.atmosphere || 'neutral atmosphere'
+      atmosphere: scenario.atmosphere || 'neutral atmosphere',
+      hasAsset: !!scenario.imageUrl
     }));
 
     const objectData = objects
       .filter(obj => obj.value > 50 || obj.type === 'money' || obj.type === 'weapon')
       .map(obj => ({
         name: obj.name,
-        appearance: obj.appearance || obj.description
+        appearance: obj.appearance || obj.description,
+        hasAsset: !!obj.imageUrl
       }));
 
-    // Generar la imagen compuesta usando el nuevo método especializado
+    // 🍌 Generar imagen compuesta que combine los assets existentes
+    console.log('🍌 Nano Banana: Componiendo escena final usando assets individuales...');
     const compositeImage = await this.imageGenerator.generateCompositeSceneImage(
       characterData,
       scenarioData,
       objectData,
-      originalPrompt,
+      `${originalPrompt} - Componer usando assets existentes de personajes y escenarios ya creados`,
       this.determineMood(originalPrompt)
     );
 
-    if (compositeImage) {
-      console.log('🎨 Imagen compuesta generada exitosamente');
-    }
+    // Crear descripción detallada de la escena
+    const sceneDescription = this.generateSceneDescription(characters, scenarios, objects, originalPrompt);
 
-    return compositeImage || undefined;
+    if (compositeImage) {
+      console.log('🎨✅ Escena compuesta generada exitosamente usando assets existentes');
+      return { image: compositeImage, description: sceneDescription };
+    } else {
+      console.log('⚠️ No se pudo generar escena compuesta, pero assets individuales están disponibles');
+      return { description: sceneDescription };
+    }
   }
 
   /**
@@ -461,7 +551,308 @@ export class ElementManager {
   /**
    * Limpiar biblioteca de elementos no utilizados
    */
-  public cleanupLibrary(days: number = 30) {
-    this.library.cleanupLibrary(days);
+  public async cleanupLibrary(days: number = 30) {
+    await this.library.cleanupLibrary(days);
+  }
+
+  /**
+   * Generar características únicas para reconocimiento durante la historia
+   */
+  private generateUniqueTraits(name: string, description: string, type: 'character' | 'scenario' | 'object'): string[] {
+    const traits: string[] = [];
+    const lowerName = name.toLowerCase();
+    const lowerDesc = description.toLowerCase();
+
+    // Características base por tipo
+    switch (type) {
+      case 'character':
+        // Generar traits únicos para personajes
+        if (lowerDesc.includes('joven')) traits.push('joven');
+        if (lowerDesc.includes('mayor') || lowerDesc.includes('viejo')) traits.push('experimentado');
+        if (lowerDesc.includes('alto')) traits.push('imponente');
+        if (lowerDesc.includes('pequeño') || lowerDesc.includes('bajo')) traits.push('compacto');
+        if (lowerDesc.includes('elegante') || lowerDesc.includes('traje')) traits.push('formal');
+        if (lowerDesc.includes('casual')) traits.push('relajado');
+        
+        // Agregar profesión como trait
+        if (lowerDesc.includes('chef')) traits.push('culinario');
+        if (lowerDesc.includes('estudiante')) traits.push('académico');
+        if (lowerDesc.includes('vendedor')) traits.push('comercial');
+        if (lowerDesc.includes('artista')) traits.push('creativo');
+        break;
+
+      case 'scenario':
+        // Generar traits únicos para escenarios
+        if (lowerDesc.includes('bullicioso') || lowerDesc.includes('activo')) traits.push('dinámico');
+        if (lowerDesc.includes('tranquilo') || lowerDesc.includes('silencioso')) traits.push('sereno');
+        if (lowerDesc.includes('elegante') || lowerDesc.includes('lujoso')) traits.push('sofisticado');
+        if (lowerDesc.includes('moderno')) traits.push('contemporáneo');
+        if (lowerDesc.includes('antiguo') || lowerDesc.includes('clásico')) traits.push('tradicional');
+        if (lowerDesc.includes('pequeño')) traits.push('íntimo');
+        if (lowerDesc.includes('grande') || lowerDesc.includes('amplio')) traits.push('espacioso');
+        break;
+
+      case 'object':
+        // Generar traits únicos para objetos
+        if (lowerDesc.includes('antiguo') || lowerDesc.includes('viejo')) traits.push('vintage');
+        if (lowerDesc.includes('nuevo') || lowerDesc.includes('moderno')) traits.push('contemporáneo');
+        if (lowerDesc.includes('valioso') || lowerDesc.includes('caro')) traits.push('preciado');
+        if (lowerDesc.includes('único') || lowerDesc.includes('raro')) traits.push('exclusivo');
+        if (lowerDesc.includes('útil') || lowerDesc.includes('práctico')) traits.push('funcional');
+        break;
+    }
+
+    // Generar trait único basado en el nombre
+    const nameHash = name.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
+    const uniqueTraits = [
+      'memorable', 'distintivo', 'especial', 'notable', 'característico', 
+      'particular', 'singular', 'único', 'reconocible', 'emblemático'
+    ];
+    traits.push(uniqueTraits[nameHash % uniqueTraits.length]);
+
+    return traits.slice(0, 3); // Máximo 3 traits
+  }
+
+  /**
+   * Generar firma visual distintiva para Nano Banana
+   */
+  private generateVisualSignature(name: string, appearance: string, type: 'character' | 'scenario' | 'object'): string {
+    const signatures: Record<string, string[]> = {
+      character: [
+        'distinctive scar on left cheek',
+        'unique green eyes that stand out',
+        'always wears a specific red scarf',
+        'has a distinctive laugh wrinkle',
+        'characteristic confident posture',
+        'unique hand gesture when talking',
+        'distinctive silver ring on right hand',
+        'memorable curly hair texture',
+        'specific way of tilting head when listening',
+        'unique freckle pattern on nose'
+      ],
+      scenario: [
+        'distinctive blue lighting in corners',
+        'unique vintage clock on the wall',
+        'characteristic worn wooden floor pattern',
+        'specific plants by the entrance',
+        'memorable red door with brass handle',
+        'distinctive window arrangement',
+        'unique ceiling fan design',
+        'characteristic stone texture on walls',
+        'specific graffiti art on one corner',
+        'memorable chipped paint pattern'
+      ],
+      object: [
+        'distinctive golden trim around edges',
+        'unique scratches that form a pattern',
+        'characteristic worn leather texture',
+        'specific engravings on the surface',
+        'memorable rust spots in corner',
+        'distinctive purple ribbon attached',
+        'unique geometric pattern engraved',
+        'characteristic aged bronze color',
+        'specific manufacturer logo visible',
+        'memorable dent on the left side'
+      ]
+    };
+
+    // Seleccionar firma basada en el nombre para consistencia
+    const nameHash = name.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
+    const typeSignatures = signatures[type];
+    return typeSignatures[nameHash % typeSignatures.length];
+  }
+
+  /**
+   * Crear resumen detallado de assets para visualización
+   */
+  private createAssetsSummary(
+    newElements: { characters: StoredCharacter[]; scenarios: StoredScenario[]; objects: StoredObject[]; },
+    reusedElements: { characters: StoredCharacter[]; scenarios: StoredScenario[]; objects: StoredObject[]; },
+    allCharacters: StoredCharacter[],
+    allScenarios: StoredScenario[],
+    allObjects: StoredObject[],
+    originalPrompt: string
+  ): AssetGenerationSummary {
+    
+    const newAssets: AssetInfo[] = [
+      ...newElements.characters.map(char => this.createAssetInfo(char, 'character')),
+      ...newElements.scenarios.map(scenario => this.createAssetInfo(scenario, 'scenario')),
+      ...newElements.objects.map(obj => this.createAssetInfo(obj, 'object'))
+    ];
+
+    const reusedAssets: AssetInfo[] = [
+      ...reusedElements.characters.map(char => this.createAssetInfo(char, 'character')),
+      ...reusedElements.scenarios.map(scenario => this.createAssetInfo(scenario, 'scenario')),
+      ...reusedElements.objects.map(obj => this.createAssetInfo(obj, 'object'))
+    ];
+
+    return {
+      totalAssetsGenerated: newAssets.length,
+      totalAssetsReused: reusedAssets.length,
+      newAssets,
+      reusedAssets,
+      sceneComposition: {
+        description: this.generateSceneDescription(allCharacters, allScenarios, allObjects, originalPrompt),
+        elements: [
+          ...allCharacters.map(c => `${c.name} (personaje)`),
+          ...allScenarios.map(s => `${s.name} (escenario)`),
+          ...allObjects.map(o => `${o.name} (objeto)`)
+        ],
+        mood: this.determineMood(originalPrompt)
+      }
+    };
+  }
+
+  /**
+   * Crear información de asset para visualización
+   */
+  private createAssetInfo(element: StoredCharacter | StoredScenario | StoredObject, type: 'character' | 'scenario' | 'object'): AssetInfo {
+    const baseInfo = {
+      id: element.id,
+      name: element.name,
+      type,
+      description: element.description,
+      imageUrl: element.imageUrl,
+      createdAt: element.createdAt,
+      lastUsed: element.lastUsed,
+      usageCount: element.usageCount
+    };
+
+    // Extraer traits únicos de los tags
+    const uniqueTraits = element.tags.filter(tag => 
+      ['memorable', 'distintivo', 'especial', 'notable', 'característico', 
+       'particular', 'singular', 'único', 'reconocible', 'emblemático'].includes(tag)
+    );
+
+    // Extraer firma visual de la apariencia
+    let visualSignature = 'Sin características distintivas especificadas';
+    if ('appearance' in element && element.appearance) {
+      const signatureMatch = element.appearance.match(/DISTINCTIVE FEATURES: (.+)/);
+      if (signatureMatch) {
+        visualSignature = signatureMatch[1];
+      }
+    } else if ('visualDetails' in element && element.visualDetails) {
+      const signatureMatch = element.visualDetails.match(/DISTINCTIVE FEATURES: (.+)/);
+      if (signatureMatch) {
+        visualSignature = signatureMatch[1];
+      }
+    }
+
+    return {
+      ...baseInfo,
+      uniqueTraits,
+      visualSignature
+    };
+  }
+
+  /**
+   * Generar descripción detallada de la escena compuesta
+   */
+  private generateSceneDescription(
+    characters: StoredCharacter[],
+    scenarios: StoredScenario[],
+    objects: StoredObject[],
+    originalPrompt: string
+  ): string {
+    let description = '🎬 Escena Compuesta:\n\n';
+
+    // Describir el escenario principal
+    if (scenarios.length > 0) {
+      const mainScenario = scenarios[0];
+      description += `📍 Ubicación: ${mainScenario.name}\n`;
+      description += `   ${mainScenario.description}\n`;
+      description += `   Atmósfera: ${mainScenario.atmosphere}\n\n`;
+    }
+
+    // Describir personajes presentes
+    if (characters.length > 0) {
+      description += `👥 Personajes en escena:\n`;
+      characters.forEach(char => {
+        description += `   • ${char.name}: ${char.description}\n`;
+        if (char.personality) {
+          description += `     Personalidad: ${char.personality}\n`;
+        }
+      });
+      description += '\n';
+    }
+
+    // Describir objetos importantes
+    if (objects.length > 0) {
+      const importantObjects = objects.filter(obj => obj.value > 50 || obj.type === 'money' || obj.type === 'weapon');
+      if (importantObjects.length > 0) {
+        description += `📦 Objetos destacados:\n`;
+        importantObjects.forEach(obj => {
+          description += `   • ${obj.name}: ${obj.description}\n`;
+        });
+        description += '\n';
+      }
+    }
+
+    // Contexto de la acción
+    description += `🎭 Contexto: ${originalPrompt}\n`;
+    description += `🎨 Mood: ${this.determineMood(originalPrompt)}`;
+
+    return description;
+  }
+
+  /**
+   * Limpiar todos los assets existentes
+   */
+  public async clearAllAssets(): Promise<{
+    indexedDBCleared: boolean;
+    localStorageCleared: boolean;
+    totalAssetsRemoved: number;
+  }> {
+    console.log('🗑️ ElementManager: Iniciando limpieza completa de assets...');
+    const result = await this.library.clearAllAssets();
+    console.log(`🧹 ElementManager: Limpieza completa: ${result.totalAssetsRemoved} assets eliminados`);
+    return result;
+  }
+
+  /**
+   * Limpiar solo assets de IndexedDB
+   */
+  public async clearIndexedDBAssets(): Promise<number> {
+    console.log('🗑️ ElementManager: Limpiando assets de IndexedDB...');
+    const removed = await this.library.clearIndexedDBAssets();
+    console.log(`🧹 ElementManager: ${removed} assets eliminados de IndexedDB`);
+    return removed;
+  }
+
+  /**
+   * Limpiar TODA la biblioteca de elementos
+   */
+  public clearCompleteLibrary(): {
+    charactersRemoved: number;
+    scenariosRemoved: number;
+    objectsRemoved: number;
+    totalRemoved: number;
+  } {
+    console.log('🗑️ ElementManager: Limpiando biblioteca completa...');
+    const result = this.library.clearCompleteLibrary();
+    console.log(`🧹 ElementManager: ${result.totalRemoved} elementos eliminados de la biblioteca`);
+    return result;
+  }
+
+  /**
+   * Reset completo del sistema (biblioteca + assets)
+   */
+  public async resetCompleteSystem(): Promise<{
+    libraryStats: {
+      charactersRemoved: number;
+      scenariosRemoved: number;
+      objectsRemoved: number;
+      totalRemoved: number;
+    };
+    assetStats: {
+      indexedDBCleared: boolean;
+      localStorageCleared: boolean;
+      totalAssetsRemoved: number;
+    };
+  }> {
+    console.log('🔄 ElementManager: Iniciando reset completo del sistema...');
+    const result = await this.library.resetCompleteSystem();
+    console.log(`🧹 ElementManager: Reset completo - ${result.libraryStats.totalRemoved} elementos + ${result.assetStats.totalAssetsRemoved} assets eliminados`);
+    return result;
   }
 }

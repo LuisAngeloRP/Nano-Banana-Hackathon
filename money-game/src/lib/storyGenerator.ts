@@ -115,32 +115,32 @@ Eres el narrador de un juego conversacional donde el jugador debe convertir $1 e
 SITUACIÓN INICIAL:
 ${context.currentSituation}
 
-INSTRUCCIONES PARA LA HISTORIA INICIAL:
-- Establece el escenario de forma cinematográfica y envolvente
-- El jugador tiene solo $1 y está en una ciudad llena de oportunidades
-- Describe el ambiente, las emociones y las primeras impresiones
-- Introduce 1-2 personajes iniciales que puedan ser útiles
-- Describe 1-2 lugares donde el jugador puede buscar oportunidades
-- Menciona algunos objetos o contactos que podrían obtener
-- Establece el tono: realista pero con posibilidades dramáticas
-- Termina invitando al jugador a tomar su primera decisión
+INSTRUCCIONES PARA LA BIENVENIDA INICIAL:
+- Crea una bienvenida cálida y envolvente al jugador
+- Explica brevemente el concepto: transformar $1 en fortuna en 10 días
+- Menciona que está en una ciudad llena de oportunidades
+- NO describas lugares específicos, personajes o objetos aún
+- NO generes elementos hasta que el jugador comparta su historia
+- Invita al jugador a contar su origen/trasfondo personal
+- Pregunta específicamente: "¿Quién eres y cómo llegaste a tener solo este dólar?"
+- Explica que su respuesta determinará su punto de partida
 
 TONO:
-- Narrativa rica y descriptiva
-- Entre serio y aventurero
-- Inspirador pero realista sobre los desafíos
+- Acogedor y motivador
+- Intrigante y lleno de posibilidades
+- Invita a la creatividad del jugador
 
 FORMATO DE RESPUESTA (JSON):
 {
-  "narrative": "Historia inicial inmersiva estableciendo el escenario (3-4 párrafos)",
-  "newCharacters": [{"name": "Nombre", "description": "Descripción del personaje", "personality": "Personalidad distintiva", "relationship": "neutral", "relevantTo": ["oportunidades", "negocios"]}],
-  "newScenarios": [{"name": "Lugar", "description": "Descripción detallada", "type": "location", "riskLevel": "low/medium"}],
-  "newObjects": [{"name": "Objeto/Oportunidad", "description": "Descripción", "type": "information/contact/tool", "value": 0, "usefulness": "Potencial uso"}],
+  "narrative": "Mensaje de bienvenida que invite al jugador a contar su origen (2-3 párrafos)",
+  "newCharacters": [],
+  "newScenarios": [],
+  "newObjects": [],
   "statusUpdates": {},
   "actionResults": {
     "success": true,
     "moneyChange": 0,
-    "description": "Inicio de la aventura",
+    "description": "Bienvenida al juego",
     "consequences": []
   }
 }
@@ -237,49 +237,26 @@ Responde ÚNICAMENTE con el JSON válido, sin texto adicional.`;
   }
 
   private getFallbackSimulatedResponse(prompt: string): string {
-    // Detectar si es historia inicial
-    const isInitial = prompt.includes('HISTORIA INICIAL');
+    // Detectar si es bienvenida inicial
+    const isInitial = prompt.includes('BIENVENIDA INICIAL');
     
     if (isInitial) {
       return JSON.stringify({
-        narrative: `El sol de la mañana se filtra entre los rascacielos mientras caminas por las bulliciosas calles del centro de la ciudad. En tu bolsillo, una sola moneda de dólar hace un sonido metálico solitario - todo lo que te queda en el mundo. Pero en tus ojos arde una determinación férrea: en 10 días, convertirás este dólar en una fortuna.
+        narrative: `¡Bienvenido a "De $1 a Millonario"! Te encuentras en una vibrante ciudad llena de infinitas posibilidades, donde cada esquina puede esconder una oportunidad de oro. Tienes exactamente 10 días para transformar tu único dólar en la mayor fortuna posible.
 
-La ciudad pulsa con energía y oportunidades. Oficinistas elegantes pasan a tu lado hablando de grandes negocios, vendedores ambulantes gritan sus ofertas, y en los escaparates de las tiendas se reflejan tanto tus sueños como tus miedos. Cada esquina parece susurrar promesas de riqueza para aquellos lo suficientemente audaces como para tomarlas.
+En este momento, sostienes en tu mano una moneda de un dólar - todo lo que posees en el mundo. Pero no te preocupes, porque las mejores historias de éxito comenzaron exactamente así: con nada más que determinación y una pequeña cantidad para empezar.
 
-Cerca de una cafetería, notas a un hombre mayor en traje leyendo el periódico financiero, murmurando sobre oportunidades de inversión. En el callejón adyacente, un joven con laptop parece estar coordinando algún tipo de negocio en línea. Tus instintos te dicen que cada persona, cada lugar, cada momento podría ser la clave para tu transformación.
+Antes de que comience tu aventura empresarial, necesito conocerte mejor. Tu trasfondo personal determinará exactamente dónde y cómo comenzarás este desafío. ¿Quién eres y cómo llegaste a tener solo este dólar? ¿Eres un estudiante que gastó sus últimos ahorros? ¿Un emprendedor que perdió todo? ¿Alguien que está empezando desde cero por elección propia? 
 
-El reloj marca las 9:00 AM del día 1. Tu aventura hacia la riqueza... comienza ahora.`,
-        newCharacters: [
-          {
-            name: "Ricardo Mendoza",
-            description: "Hombre mayor en traje, aparenta ser un inversor experimentado leyendo el periódico financiero",
-            personality: "Calculador y observador, parece conocer el mundo de las finanzas",
-            relationship: "neutral",
-            relevantTo: ["inversiones", "consejos financieros"]
-          }
-        ],
-        newScenarios: [
-          {
-            name: "Cafetería 'El Punto de Encuentro'",
-            description: "Lugar frecuentado por empresarios y profesionales, ideal para networking y escuchar oportunidades",
-            type: "location",
-            riskLevel: "low"
-          }
-        ],
-        newObjects: [
-          {
-            name: "Periódico Financiero del Día",
-            description: "Contiene información sobre oportunidades de inversión y tendencias del mercado",
-            type: "information",
-            value: 0,
-            usefulness: "Conocimiento sobre mercados y oportunidades"
-          }
-        ],
+Cuéntame tu historia...`,
+        newCharacters: [],
+        newScenarios: [],
+        newObjects: [],
         statusUpdates: {},
         actionResults: {
           success: true,
           moneyChange: 0,
-          description: "Inicio de la aventura",
+          description: "Bienvenida al juego",
           consequences: []
         }
       });

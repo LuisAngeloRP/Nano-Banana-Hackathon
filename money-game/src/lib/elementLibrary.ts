@@ -1,11 +1,14 @@
 import { ElementLibrary, StoredCharacter, StoredScenario, StoredObject, ExtractedElements } from '@/types/game';
+import { AssetManager } from './assetManager';
 
 export class ElementLibraryManager {
   private static readonly STORAGE_KEY = 'nano-banana-element-library';
   private library: ElementLibrary;
+  private assetManager: AssetManager;
 
   constructor() {
     this.library = this.loadLibrary();
+    this.assetManager = new AssetManager();
   }
 
   // Cargar biblioteca desde localStorage
@@ -181,15 +184,31 @@ export class ElementLibraryManager {
     }
   }
 
-  // Actualizar imagen de un elemento
-  public updateElementImage(elementId: string, type: 'character' | 'scenario' | 'object', imageUrl: string): void {
+  // Actualizar imagen de un elemento (ahora con gestión de assets)
+  public async updateElementImage(elementId: string, type: 'character' | 'scenario' | 'object', imageDataUrl: string): Promise<void> {
     const collection = this.library[type === 'character' ? 'characters' : type === 'scenario' ? 'scenarios' : 'objects'];
     const element = collection.find(el => el.id === elementId);
     
     if (element) {
-      element.imageUrl = imageUrl;
+      // Si es una data URL (imagen base64), guardarla como asset
+      if (imageDataUrl.startsWith('data:')) {
+        console.log(`💾 Guardando imagen como asset para ${type} '${element.name}'...`);
+        const assetPath = await this.assetManager.saveImageAsset(imageDataUrl, elementId, type);
+        
+        if (assetPath) {
+          element.imageUrl = assetPath;
+          console.log(`📸 Imagen guardada como asset: ${assetPath}`);
+        } else {
+          console.warn(`⚠️ No se pudo guardar imagen como asset para ${element.name}, usando placeholder`);
+          element.imageUrl = undefined;
+        }
+      } else {
+        // Si ya es una ruta de archivo, usarla directamente
+        element.imageUrl = imageDataUrl;
+        console.log(`📸 Ruta de imagen actualizada para ${type} '${element.name}'`);
+      }
+      
       this.saveLibrary();
-      console.log(`📸 Imagen actualizada para ${type} '${element.name}'`);
     }
   }
 
@@ -253,8 +272,8 @@ export class ElementLibraryManager {
     return `${prefix}_${timestamp}_${random}`;
   }
 
-  // Limpiar biblioteca (elementos no usados por mucho tiempo)
-  public cleanupLibrary(daysThreshold: number = 30): void {
+  // Limpiar biblioteca (elementos no usados por mucho tiempo) 
+  public async cleanupLibrary(daysThreshold: number = 30): Promise<void> {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - daysThreshold);
 
@@ -291,10 +310,18 @@ export class ElementLibraryManager {
       this.saveLibrary();
       console.log(`🧹 Biblioteca limpiada: ${removedCount} elementos eliminados`);
     }
+
+    // También limpiar assets no utilizados
+    const assetsRemoved = await this.assetManager.cleanupAssets(daysThreshold);
+    if (assetsRemoved > 0) {
+      console.log(`🗑️ Assets limpiados: ${assetsRemoved} imágenes eliminadas`);
+    }
   }
 
   // Obtener estadísticas de la biblioteca
-  public getStats() {
+  public async getStats() {
+    const assetStats = await this.assetManager.getStorageStats();
+    
     return {
       totalCharacters: this.library.characters.length,
       totalScenarios: this.library.scenarios.length,
@@ -303,7 +330,13 @@ export class ElementLibraryManager {
       lastUpdated: this.library.lastUpdated,
       mostUsedCharacter: this.getMostUsed('character', 1)[0],
       mostUsedScenario: this.getMostUsed('scenario', 1)[0],
-      mostUsedObject: this.getMostUsed('object', 1)[0]
+      mostUsedObject: this.getMostUsed('object', 1)[0],
+      assetStorage: {
+        totalImages: assetStats.totalImages,
+        totalSizeMB: Math.round(assetStats.totalSizeBytes / (1024 * 1024) * 100) / 100,
+        oldestImage: assetStats.oldestImage,
+        newestImage: assetStats.newestImage
+      }
     };
   }
 
@@ -348,5 +381,147 @@ export class ElementLibraryManager {
     }
     
     return false;
+  }
+
+  /**
+   * Obtener URL de imagen desde el almacenamiento de assets
+   */
+  public async getImageUrl(imagePath: string): Promise<string | null> {
+    if (!imagePath) return null;
+    
+    // Si ya es una URL válida, devolverla directamente
+    if (imagePath.startsWith('http') || imagePath.startsWith('data:')) {
+      return imagePath;
+    }
+    
+    // Si es una ruta de asset, recuperarla desde IndexedDB
+    if (imagePath.startsWith('/assets/generated/')) {
+      const fileName = imagePath.split('/').pop();
+      if (fileName) {
+        return await this.assetManager.getImageFromStorage(fileName);
+      }
+    }
+    
+    return null;
+  }
+
+  /**
+   * Verificar disponibilidad del sistema de assets
+   */
+  public async checkAssetSystemHealth(): Promise<{
+    indexedDBAvailable: boolean;
+    canStoreAssets: boolean;
+    storageQuotaInfo: any;
+  }> {
+    const health = {
+      indexedDBAvailable: false,
+      canStoreAssets: false,
+      storageQuotaInfo: null as any
+    };
+
+    try {
+      // Verificar IndexedDB
+      health.indexedDBAvailable = 'indexedDB' in window;
+      
+      // Verificar si podemos almacenar
+      if (health.indexedDBAvailable) {
+        health.canStoreAssets = true;
+      }
+
+      // Obtener información de cuota si está disponible
+      if ('navigator' in window && 'storage' in navigator && 'estimate' in navigator.storage) {
+        health.storageQuotaInfo = await navigator.storage.estimate();
+      }
+
+    } catch (error) {
+      console.warn('⚠️ Error verificando sistema de assets:', error);
+    }
+
+    return health;
+  }
+
+  /**
+   * Limpiar todos los assets existentes
+   */
+  public async clearAllAssets(): Promise<{
+    indexedDBCleared: boolean;
+    localStorageCleared: boolean;
+    totalAssetsRemoved: number;
+  }> {
+    return await this.assetManager.clearAllAssets();
+  }
+
+  /**
+   * Limpiar solo assets de IndexedDB
+   */
+  public async clearIndexedDBAssets(): Promise<number> {
+    return await this.assetManager.clearIndexedDBAssets();
+  }
+
+  /**
+   * Limpiar TODA la biblioteca de elementos (elementos + assets)
+   */
+  public clearCompleteLibrary(): {
+    charactersRemoved: number;
+    scenariosRemoved: number;
+    objectsRemoved: number;
+    totalRemoved: number;
+  } {
+    const charactersCount = this.library.characters.length;
+    const scenariosCount = this.library.scenarios.length;
+    const objectsCount = this.library.objects.length;
+    const totalCount = charactersCount + scenariosCount + objectsCount;
+
+    // Resetear biblioteca completa
+    this.library = {
+      characters: [],
+      scenarios: [],
+      objects: [],
+      lastUpdated: new Date()
+    };
+
+    // Guardar biblioteca vacía
+    this.saveLibrary();
+
+    console.log(`🗑️ Biblioteca completa limpiada: ${totalCount} elementos eliminados`);
+    
+    return {
+      charactersRemoved: charactersCount,
+      scenariosRemoved: scenariosCount,
+      objectsRemoved: objectsCount,
+      totalRemoved: totalCount
+    };
+  }
+
+  /**
+   * Resetear todo el sistema (biblioteca + assets)
+   */
+  public async resetCompleteSystem(): Promise<{
+    libraryStats: {
+      charactersRemoved: number;
+      scenariosRemoved: number;
+      objectsRemoved: number;
+      totalRemoved: number;
+    };
+    assetStats: {
+      indexedDBCleared: boolean;
+      localStorageCleared: boolean;
+      totalAssetsRemoved: number;
+    };
+  }> {
+    console.log('🔄 Iniciando reset completo del sistema...');
+
+    // 1. Limpiar biblioteca de elementos
+    const libraryStats = this.clearCompleteLibrary();
+
+    // 2. Limpiar todos los assets
+    const assetStats = await this.clearAllAssets();
+
+    console.log(`🧹 Reset completo: ${libraryStats.totalRemoved} elementos + ${assetStats.totalAssetsRemoved} assets eliminados`);
+
+    return {
+      libraryStats,
+      assetStats
+    };
   }
 }

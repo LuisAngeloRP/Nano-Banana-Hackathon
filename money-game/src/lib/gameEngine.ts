@@ -33,37 +33,40 @@ export class GameEngine {
       throw new Error('El juego ha terminado');
     }
 
-    // Generar historia basada en la acción
+    console.log('🎮 Procesando acción del usuario:', actionDescription);
+
+    // PASO 1: Procesar elementos del prompt del usuario PRIMERO
+    const elementResult = await this.processUserPromptElements(actionDescription);
+
+    // PASO 2: Generar narrativa usando el contexto enriquecido
     const aiResponse = await this.storyGenerator.generateStory(gameState, actionDescription);
 
-    // Procesar elementos extraídos de la historia en paralelo
-    const elementPromise = this.processStoryElements(aiResponse.narrative, actionDescription);
-
-    // Procesar la respuesta de la IA
+    // PASO 3: Procesar la respuesta de la IA (agregar elementos al juego)
     await this.processAIResponse(aiResponse, actionDescription);
 
-    // Procesar elementos y generar imagen compuesta
+    // PASO 4: Generar escena usando todos los assets disponibles
     try {
-      const elementResult = await elementPromise;
-      
-      // Usar la imagen compuesta generada o crear una de fallback
       if (elementResult?.compositeImage) {
         aiResponse.storyImage = elementResult.compositeImage;
-        console.log('🎨 Usando imagen compuesta generada por el sistema de elementos');
+        console.log('🎨 Usando escena compuesta generada con assets de Nano Banana');
       } else {
         // Fallback a la generación tradicional de imagen
         const imageUrl = await this.generateSceneImage(aiResponse.narrative, actionDescription);
         aiResponse.storyImage = imageUrl || this.imageGenerator.getPlaceholderImage('story');
       }
 
-      // Agregar información de elementos al mensaje si hay nuevos elementos
-      if (elementResult && (elementResult.newElements.characters.length > 0 || 
-                           elementResult.newElements.scenarios.length > 0 || 
-                           elementResult.newElements.objects.length > 0)) {
-        console.log(`📚 Elementos nuevos agregados a la biblioteca:
-          - ${elementResult.newElements.characters.length} personajes
-          - ${elementResult.newElements.scenarios.length} escenarios  
-          - ${elementResult.newElements.objects.length} objetos`);
+      // PASO 5: Agregar información detallada de assets al AIResponse
+      if (elementResult) {
+        aiResponse.assetsGenerated = elementResult.assetsGenerated;
+        aiResponse.compositeDescription = elementResult.compositeDescription;
+        
+        console.log(`📚 Elementos procesados:
+          - ${elementResult.newElements.characters.length} personajes nuevos
+          - ${elementResult.newElements.scenarios.length} escenarios nuevos  
+          - ${elementResult.newElements.objects.length} objetos nuevos
+          - ${elementResult.reusedElements.characters.length} personajes reutilizados
+          - ${elementResult.reusedElements.scenarios.length} escenarios reutilizados
+          - ${elementResult.reusedElements.objects.length} objetos reutilizados`);
       }
 
     } catch (error) {
@@ -90,20 +93,8 @@ export class GameEngine {
     const gameState = this.gameManager.getGameState();
     const aiResponse = await this.storyGenerator.generateStory(gameState);
     
-    // Generar imagen inicial solo para el primer día
-    if (gameState.currentDay === 1 && gameState.gameHistory.length === 0) {
-      try {
-        const imageUrl = await this.imageGenerator.generateLocationImage(
-          "Ciudad al amanecer",
-          "Rascacielos, calles bulliciosas, ambiente urbano emprendedor",
-          "morning"
-        );
-        aiResponse.storyImage = imageUrl || this.imageGenerator.getPlaceholderImage('story');
-      } catch (error) {
-        console.warn('No se pudo generar imagen inicial:', error);
-        aiResponse.storyImage = this.imageGenerator.getPlaceholderImage('story');
-      }
-    }
+    // NO generar imagen inicial automáticamente - solo texto de bienvenida
+    // Las imágenes se generarán después del primer prompt del usuario
     
     return aiResponse;
   }
@@ -245,28 +236,55 @@ export class GameEngine {
   }
 
   /**
-   * Procesar elementos de la historia usando el nuevo sistema
+   * Procesar elementos del prompt del usuario (ANTES de generar narrativa)
    */
-  private async processStoryElements(narrative: string, action: string): Promise<ElementGenerationResult | null> {
+  private async processUserPromptElements(userPrompt: string): Promise<ElementGenerationResult | null> {
     try {
-      console.log('🔍 Procesando elementos de la historia...');
+      console.log('🔍 Analizando prompt del usuario para extraer elementos...');
       
-      // Construir contexto de la historia actual
+      // Construir contexto del estado actual del juego
       const gameState = this.gameManager.getGameState();
-      const context = this.buildStoryContext(gameState, action);
+      const context = this.buildUserPromptContext(gameState, userPrompt);
       
-      // Procesar la narrativa para extraer, reutilizar y generar elementos
-      const result = await this.elementManager.processStoryPrompt(narrative, context);
+      // Procesar el prompt del usuario para extraer, reutilizar y generar elementos
+      const result = await this.elementManager.processStoryPrompt(userPrompt, context);
       
       return result;
     } catch (error) {
-      console.warn('Error procesando elementos de la historia:', error);
+      console.warn('Error procesando elementos del prompt del usuario:', error);
       return null;
     }
   }
 
   /**
-   * Construir contexto para el procesamiento de elementos
+   * Construir contexto específico para procesar prompt del usuario
+   */
+  private buildUserPromptContext(gameState: GameState, userPrompt: string): string {
+    let context = `Juego "De $1 a Millonario" - Día ${gameState.currentDay} de 10. Dinero actual: $${gameState.money}.
+    
+Prompt del usuario: "${userPrompt}"
+
+Elementos ya existentes en la biblioteca:`;
+    
+    if (gameState.characters.length > 0) {
+      context += `\nPersonajes existentes: ${gameState.characters.slice(0, 5).map(c => c.name).join(', ')}.`;
+    }
+    
+    if (gameState.scenarios.length > 0) {
+      context += `\nLugares existentes: ${gameState.scenarios.slice(0, 5).map(s => s.name).join(', ')}.`;
+    }
+
+    if (gameState.objects.length > 0) {
+      context += `\nObjetos existentes: ${gameState.objects.slice(0, 5).map(o => o.name).join(', ')}.`;
+    }
+    
+    context += `\n\nInstrucciones: Analiza el prompt del usuario para identificar qué elementos menciona. Reutiliza elementos existentes cuando sea apropiado y crea nuevos assets con Nano Banana solo para elementos realmente nuevos.`;
+    
+    return context;
+  }
+
+  /**
+   * Construir contexto para el procesamiento de elementos (método legacy)
    */
   private buildStoryContext(gameState: GameState, action: string): string {
     let context = `Día ${gameState.currentDay} de 10. Dinero actual: $${gameState.money}. Acción: ${action}.`;

@@ -103,6 +103,8 @@ export interface AIResponse {
     consequences?: string[];
   };
   storyImage?: string; // URL de la imagen generada para esta parte de la historia
+  assetsGenerated?: AssetGenerationSummary; // Información detallada de assets procesados
+  compositeDescription?: string; // Descripción de la escena compuesta
 }
 
 export interface ChatMessage {
@@ -122,6 +124,8 @@ export interface ChatMessage {
     };
     statusUpdates?: Partial<PlayerStatus>;
     storyImage?: string; // URL de la imagen para este mensaje
+    assetsGenerated?: AssetGenerationSummary; // Información detallada de assets
+    compositeDescription?: string; // Descripción de la escena compuesta
   };
 }
 
@@ -208,4 +212,31 @@ export interface ElementGenerationResult {
     objects: StoredObject[];
   };
   compositeImage?: string; // imagen que combina todos los elementos
+  compositeDescription?: string; // descripción de la escena compuesta
+  assetsGenerated: AssetGenerationSummary; // resumen de assets procesados
+}
+
+export interface AssetGenerationSummary {
+  totalAssetsGenerated: number;
+  totalAssetsReused: number;
+  newAssets: AssetInfo[];
+  reusedAssets: AssetInfo[];
+  sceneComposition: {
+    description: string;
+    elements: string[];
+    mood: string;
+  };
+}
+
+export interface AssetInfo {
+  id: string;
+  name: string;
+  type: 'character' | 'scenario' | 'object';
+  description: string;
+  imageUrl?: string;
+  uniqueTraits: string[]; // características únicas para reconocimiento
+  visualSignature: string; // firma visual distintiva
+  createdAt?: Date;
+  lastUsed?: Date;
+  usageCount?: number;
 }

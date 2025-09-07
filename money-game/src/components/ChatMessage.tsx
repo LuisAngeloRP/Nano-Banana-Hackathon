@@ -1,6 +1,7 @@
 'use client';
 
 import { ChatMessage as ChatMessageType, GameState } from '@/types/game';
+import AssetDisplay from './AssetDisplay';
 
 interface ChatMessageProps {
   message: ChatMessageType;
@@ -70,8 +71,8 @@ const ChatMessage = ({ message, gameState }: ChatMessageProps) => {
           )}
         </div>
 
-        {/* Imagen de la historia (si existe) */}
-        {message.gameData?.storyImage && (
+        {/* Imagen de la historia (solo si no hay sistema de assets) */}
+        {message.gameData?.storyImage && !message.gameData?.assetsGenerated && (
           <div className="mb-4">
             <img 
               src={message.gameData.storyImage} 
@@ -129,8 +130,17 @@ const ChatMessage = ({ message, gameState }: ChatMessageProps) => {
               )}
             </div>
 
-            {/* Nuevos elementos descubiertos */}
-            {message.gameData.newElements && (
+            {/* Assets detallados (nuevo sistema) */}
+            {message.gameData.assetsGenerated && (
+              <AssetDisplay 
+                assetsGenerated={message.gameData.assetsGenerated}
+                compositeImage={message.gameData.storyImage}
+                compositeDescription={message.gameData.compositeDescription}
+              />
+            )}
+
+            {/* Fallback a elementos simples (sistema antiguo) */}
+            {!message.gameData.assetsGenerated && message.gameData.newElements && (
               <div className="mt-4 space-y-2">
                 {message.gameData.newElements.characters && message.gameData.newElements.characters.length > 0 && (
                   <div className="bg-slate-700 rounded p-2">

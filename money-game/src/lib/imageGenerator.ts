@@ -4,6 +4,36 @@ import { aiLogger } from './aiLogger';
 export class ImageGenerator {
   private apiKey: string;
   private genAI: GoogleGenerativeAI | null = null;
+  
+  // Configuración global de estilo pixel art para uniformidad
+  private readonly PIXEL_ART_STYLE = `
+PIXEL ART STYLE SPECIFICATIONS (STRICTLY FOLLOW):
+- 16-bit or 32-bit pixel art aesthetic
+- Limited color palette (256 colors maximum)
+- Clean pixel lines with no anti-aliasing
+- Crisp, blocky textures and shapes
+- Dithering patterns for gradients and shadows
+- Consistent pixel density (1:1 pixel ratio)
+- Retro video game art style (SNES/Genesis era)
+- Sharp edges and geometric forms
+- No blurring or smooth gradients
+- Vibrant, saturated colors with clear contrast
+- Stylized proportions typical of classic RPGs
+- 8x8 or 16x16 pixel tile-based construction mindset
+`;
+
+  private readonly COMMON_PIXEL_MODIFIERS = [
+    "pixelated",
+    "retro gaming style",
+    "16-bit graphics", 
+    "pixel perfect",
+    "sprite-based art",
+    "classic JRPG style",
+    "no anti-aliasing",
+    "sharp pixel edges",
+    "limited color palette",
+    "dithered shading"
+  ];
 
   constructor(apiKey: string) {
     this.apiKey = apiKey;
@@ -12,7 +42,7 @@ export class ImageGenerator {
     if (apiKey && apiKey !== 'dummy-key') {
       try {
         this.genAI = new GoogleGenerativeAI(apiKey);
-        console.log('🍌 Nano Banana configurado con Google AI Studio');
+        console.log('🍌 Nano Banana configurado con Google AI Studio para pixel art');
       } catch (error) {
         console.warn('⚠️ Error configurando Google AI:', error);
         this.genAI = null;
@@ -22,9 +52,36 @@ export class ImageGenerator {
     }
   }
 
+  /**
+   * Crea un prompt optimizado para pixel art con especificaciones consistentes
+   */
+  private createPixelArtPrompt(basePrompt: string, specificStyle?: string): string {
+    // Seleccionar modificadores pixel art aleatorios para variedad pero manteniendo consistencia
+    const selectedModifiers = this.COMMON_PIXEL_MODIFIERS
+      .sort(() => Math.random() - 0.5)
+      .slice(0, 4)
+      .join(', ');
+    
+    const pixelPrompt = `${basePrompt}. 
+    
+${this.PIXEL_ART_STYLE}
+
+SPECIFIC MODIFIERS: ${selectedModifiers}${specificStyle ? `, ${specificStyle}` : ''}
+
+TECHNICAL REQUIREMENTS:
+- Output as pixel art sprite/scene
+- Maintain consistent pixel grid alignment
+- Use indexed color approach
+- Avoid gradients, use dithering instead
+- Sharp, defined outlines
+- Classic video game aesthetic`;
+
+    return pixelPrompt;
+  }
+
   public async generateSceneImage(
     prompt: string, 
-    style: string = "cinematic realistic"
+    style: string = "pixel art scene"
   ): Promise<string | null> {
     // Verificar si tenemos configuración de Google AI válida
     if (!this.genAI) {
@@ -57,8 +114,8 @@ export class ImageGenerator {
           model: "gemini-2.5-flash-image-preview" 
         });
         
-        // Crear el prompt optimizado para generación de imágenes
-        const imagePrompt = `${style}, ${prompt}. High quality, detailed, realistic image.`;
+        // Crear el prompt optimizado para pixel art
+        const imagePrompt = this.createPixelArtPrompt(prompt, style);
         
         console.log("🍌 Prompt para imagen:", imagePrompt);
         
@@ -130,10 +187,10 @@ export class ImageGenerator {
     characterDescription: string,
     setting: string = "urban environment"
   ): Promise<string | null> {
-    const prompt = `Portrait of ${characterName}, ${characterDescription}, in ${setting}, professional lighting, detailed face, high quality`;
+    const prompt = `Character sprite of ${characterName}, ${characterDescription}, in ${setting}`;
     
     // El logging se maneja en generateSceneImage, pero agregamos metadata específica
-    const result = await this.generateSceneImage(prompt, "realistic portrait style");
+    const result = await this.generateSceneImage(prompt, "character portrait sprite, JRPG character design");
     
     if (result) {
       aiLogger.logAIUsage({
@@ -158,10 +215,10 @@ export class ImageGenerator {
     locationDescription: string,
     timeOfDay: string = "day"
   ): Promise<string | null> {
-    const prompt = `${locationName}, ${locationDescription}, ${timeOfDay} lighting, atmospheric, detailed environment`;
+    const prompt = `Location scene of ${locationName}, ${locationDescription}, ${timeOfDay} atmosphere`;
     
     // El logging se maneja en generateSceneImage, pero agregamos metadata específica
-    const result = await this.generateSceneImage(prompt, "cinematic landscape");
+    const result = await this.generateSceneImage(prompt, "environment tileset, isometric or side-view level design");
     
     if (result) {
       aiLogger.logAIUsage({
@@ -191,17 +248,17 @@ export class ImageGenerator {
       .substring(0, 200); // Limitar longitud
     
     const moodStyles = {
-      dramatic: "dramatic lighting, cinematic composition",
-      tense: "dark atmosphere, high contrast lighting",
-      hopeful: "warm lighting, bright colors, optimistic mood",
-      mysterious: "moody lighting, shadows, mysterious atmosphere",
-      exciting: "dynamic composition, vibrant colors, action scene"
+      dramatic: "dramatic pixel art scene, high contrast pixels",
+      tense: "dark pixel palette, sharp shadows in pixel form",
+      hopeful: "bright pixel colors, warm pixel tones",
+      mysterious: "shadowy pixel art, limited dark palette",
+      exciting: "dynamic pixel composition, vibrant pixel colors"
     };
 
-    const prompt = `Scene depicting: ${cleanNarrative}, ${moodStyles[mood]}, high quality, detailed`;
+    const prompt = `Pixel art scene depicting: ${cleanNarrative}, ${moodStyles[mood]}`;
     
     // El logging se maneja en generateSceneImage, pero agregamos metadata específica
-    const result = await this.generateSceneImage(prompt, "cinematic storytelling");
+    const result = await this.generateSceneImage(prompt, "story cutscene sprite art, visual novel style");
     
     if (result) {
       aiLogger.logAIUsage({
@@ -223,30 +280,40 @@ export class ImageGenerator {
 
   /**
    * Generar imagen que combina múltiples elementos (personajes, escenarios, objetos)
+   * Usa los assets individuales ya creados para componer la escena
    */
   public async generateCompositeSceneImage(
-    characters: Array<{ name: string; appearance: string; }>,
-    scenarios: Array<{ name: string; visualDetails: string; atmosphere: string; }>,
-    objects: Array<{ name: string; appearance: string; }>,
+    characters: Array<{ name: string; appearance: string; hasAsset?: boolean; }>,
+    scenarios: Array<{ name: string; visualDetails: string; atmosphere: string; hasAsset?: boolean; }>,
+    objects: Array<{ name: string; appearance: string; hasAsset?: boolean; }>,
     context: string,
     mood: 'dramatic' | 'tense' | 'hopeful' | 'mysterious' | 'exciting' = 'dramatic'
   ): Promise<string | null> {
-    console.log('🎨 Generando imagen compuesta con múltiples elementos...');
+    console.log('🎨 Generando escena compuesta usando assets de Nano Banana...');
 
-    // Construir prompt complejo que incluya todos los elementos
-    let compositePrompt = '';
+    // Construir prompt que referencie los assets ya creados en pixel art
+    let compositePrompt = 'Compose a pixel art scene using pre-existing character and environment sprites. ';
 
-    // Agregar escenario principal
+    // Agregar escenario principal con referencia a asset
     if (scenarios.length > 0) {
       const mainScenario = scenarios[0];
       compositePrompt += `Setting: ${mainScenario.visualDetails}, ${mainScenario.atmosphere}`;
+      if (mainScenario.hasAsset) {
+        compositePrompt += ' (using pre-generated environment asset)';
+      }
     }
 
     // Agregar personajes (máximo 3 para no sobrecargar)
     if (characters.length > 0) {
       const characterDescs = characters
         .slice(0, 3)
-        .map(char => `${char.name} (${char.appearance})`)
+        .map(char => {
+          let desc = `${char.name} (${char.appearance})`;
+          if (char.hasAsset) {
+            desc += ' [using pre-generated character asset]';
+          }
+          return desc;
+        })
         .join(', ');
       
       compositePrompt += compositePrompt ? `. Characters present: ${characterDescs}` : `Characters: ${characterDescs}`;
@@ -256,7 +323,13 @@ export class ImageGenerator {
     if (objects.length > 0) {
       const objectDescs = objects
         .slice(0, 2)
-        .map(obj => obj.appearance || obj.name)
+        .map(obj => {
+          let desc = obj.appearance || obj.name;
+          if (obj.hasAsset) {
+            desc += ' [using pre-generated object asset]';
+          }
+          return desc;
+        })
         .join(' and ');
       
       compositePrompt += `. Important objects: ${objectDescs}`;
@@ -273,37 +346,51 @@ export class ImageGenerator {
       compositePrompt += `. Scene context: ${contextWords}`;
     }
 
-    // Definir estilos específicos para mood
+    // Definir estilos específicos para mood en pixel art
     const moodStyles = {
-      dramatic: "cinematic lighting, dramatic composition, depth of field",
-      tense: "dark atmosphere, high contrast, shadows, suspenseful mood",
-      hopeful: "bright lighting, warm colors, optimistic atmosphere",
-      mysterious: "moody lighting, fog, shadows, enigmatic atmosphere",
-      exciting: "dynamic angle, vibrant colors, energetic composition"
+      dramatic: "dramatic pixel lighting, high contrast pixel composition",
+      tense: "dark pixel atmosphere, sharp pixel shadows, suspenseful pixel mood",
+      hopeful: "bright pixel lighting, warm pixel colors, optimistic pixel atmosphere",
+      mysterious: "moody pixel lighting, shadowy pixels, enigmatic pixel atmosphere",
+      exciting: "dynamic pixel angle, vibrant pixel colors, energetic pixel composition"
     };
 
-    const fullPrompt = `${compositePrompt}. Style: ${moodStyles[mood]}, professional photography, high detail, realistic`;
+    // Instrucciones específicas para Nano Banana sobre composición de pixel art
+    const fullPrompt = `${compositePrompt}. 
+
+PIXEL ART COMPOSITION INSTRUCTIONS for Nano Banana:
+- Combine the pre-existing character and environment sprites into a cohesive pixel art scene
+- Maintain consistent pixel art style with all individual sprite assets
+- Create natural sprite interactions between characters and environment
+- Style: ${moodStyles[mood]}, classic RPG sprite composition, detailed pixel work
+- Focus on seamless integration of existing pixel art elements
+- Use consistent pixel grid alignment across all elements`;
+
+    console.log('🍌 Nano Banana prompt para composición:', fullPrompt);
 
     // Generar la imagen usando el método base
-    const result = await this.generateSceneImage(fullPrompt, "composite cinematic scene");
+    const result = await this.generateSceneImage(fullPrompt, "asset-based composite scene");
     
     if (result) {
       aiLogger.logAIUsage({
         aiType: 'imagen',
         model: 'nano-banana',
         provider: 'Google AI',
-        operation: 'generación de imagen compuesta',
+        operation: 'generación de escena compuesta con assets',
         success: true,
         metadata: { 
           mood,
           characterCount: characters.length,
           scenarioCount: scenarios.length,
           objectCount: objects.length,
+          charactersWithAssets: characters.filter(c => c.hasAsset).length,
+          scenariosWithAssets: scenarios.filter(s => s.hasAsset).length,
+          objectsWithAssets: objects.filter(o => o.hasAsset).length,
           promptLength: fullPrompt.length
         }
       });
 
-      console.log('🎨 Imagen compuesta generada exitosamente');
+      console.log('🎨✅ Escena compuesta generada usando assets de Nano Banana');
     }
     
     return result;
@@ -325,30 +412,30 @@ export class ImageGenerator {
 
     switch (elementType) {
       case 'character':
-        prompt = `Professional portrait of ${elementName}, ${elementDescription}`;
+        prompt = `Character sprite of ${elementName}, ${elementDescription}`;
         if (visualDetails) {
           prompt += `, ${visualDetails}`;
         }
-        prompt += ', detailed face, high quality portrait, studio lighting';
-        style = "realistic portrait photography";
+        prompt += ', detailed pixel face, character portrait sprite';
+        style = "JRPG character sprite, front-facing portrait";
         break;
 
       case 'scenario':
-        prompt = `Location view of ${elementName}, ${elementDescription}`;
+        prompt = `Environment scene of ${elementName}, ${elementDescription}`;
         if (visualDetails) {
           prompt += `, ${visualDetails}`;
         }
-        prompt += ', wide angle view, detailed environment, atmospheric lighting';
-        style = "architectural photography";
+        prompt += ', wide pixel view, detailed environment tileset';
+        style = "RPG environment tileset, isometric or side-scrolling level";
         break;
 
       case 'object':
-        prompt = `Detailed view of ${elementName}, ${elementDescription}`;
+        prompt = `Item sprite of ${elementName}, ${elementDescription}`;
         if (visualDetails) {
           prompt += `, ${visualDetails}`;
         }
-        prompt += ', product photography, clean background, detailed textures';
-        style = "product photography";
+        prompt += ', item icon sprite, clean pixel background';
+        style = "RPG item icon, inventory sprite";
         break;
     }
 
@@ -412,12 +499,12 @@ export class ImageGenerator {
     return placeholderUrl;
   }
 
-  // Función de fallback que retorna una imagen placeholder
+  // Función de fallback que retorna una imagen placeholder temática de pixel art
   public getPlaceholderImage(type: 'character' | 'location' | 'story' = 'story'): string {
     const placeholders = {
-      character: 'https://placehold.co/400x300/6366f1/ffffff?text=Personaje',
-      location: 'https://placehold.co/400x300/059669/ffffff?text=Lugar',
-      story: 'https://placehold.co/400x300/dc2626/ffffff?text=Historia'
+      character: 'https://placehold.co/400x300/6366f1/ffffff?text=🎮+Sprite+Personaje',
+      location: 'https://placehold.co/400x300/059669/ffffff?text=🗺️+Escenario+Pixel',
+      story: 'https://placehold.co/400x300/dc2626/ffffff?text=📖+Escena+RPG'
     };
     
     return placeholders[type];

@@ -54,7 +54,7 @@ const ChatGameInterface = () => {
       const geminiKey = process.env.NEXT_PUBLIC_GOOGLE_AI_API_KEY;
       const falAiKey = process.env.NEXT_PUBLIC_FAL_AI_API_KEY;
       
-      let welcomeMessage = '🎮 ¡Bienvenido a "De $1 a Millonario"! Tienes 10 días para convertir tu único dólar en la mayor fortuna posible...';
+      let welcomeMessage = '🎮 ¡Bienvenido a "De $1 a Millonario"! El narrador te está esperando para comenzar tu aventura...';
       
       if (!geminiKey || geminiKey === 'dummy-key') {
         welcomeMessage += '\n\n🤖 Modo demo: usando narrativa simulada. Para usar Gemini real, configura NEXT_PUBLIC_GOOGLE_AI_API_KEY.';
@@ -63,6 +63,8 @@ const ChatGameInterface = () => {
       if (!falAiKey || falAiKey === 'dummy-key') {
         welcomeMessage += '\n🖼️ Imágenes deshabilitadas: configura NEXT_PUBLIC_FAL_AI_API_KEY para usar Nano Banana.';
       }
+      
+      welcomeMessage += '\n\n💡 Tip: Comparte tu trasfondo personal para que el narrador pueda crear tu historia única con personajes, lugares y objetos personalizados.';
       
       addMessage({
         type: 'system',
@@ -134,7 +136,9 @@ const ChatGameInterface = () => {
             objects: story.newObjects
           },
           statusUpdates: story.statusUpdates,
-          storyImage: story.storyImage
+          storyImage: story.storyImage,
+          assetsGenerated: story.assetsGenerated,
+          compositeDescription: story.compositeDescription
         }
       });
 
@@ -222,6 +226,37 @@ const ChatGameInterface = () => {
   const getQuickActions = (): QuickAction[] => {
     if (!gameState) return [];
 
+    // Si es el primer día y no hay historial, mostrar opciones de trasfondo
+    if (gameState.currentDay === 1 && gameState.gameHistory.length === 0) {
+      return [
+        {
+          id: 'student',
+          text: 'Soy estudiante universitario que gastó todo en libros',
+          type: 'social',
+          riskLevel: 'low'
+        },
+        {
+          id: 'entrepreneur',
+          text: 'Fui emprendedor pero mi startup falló',
+          type: 'business',
+          riskLevel: 'medium'
+        },
+        {
+          id: 'worker',
+          text: 'Perdí mi trabajo y este es mi último dólar',
+          type: 'survival',
+          riskLevel: 'medium'
+        },
+        {
+          id: 'dreamer',
+          text: 'Dejé todo atrás para perseguir mi sueño',
+          type: 'special',
+          riskLevel: 'high'
+        }
+      ];
+    }
+
+    // Acciones normales del juego después del trasfondo
     const actions: QuickAction[] = [
       {
         id: 'work',
