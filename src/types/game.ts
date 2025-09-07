@@ -50,6 +50,7 @@ export interface Character {
   traits: string[];
   relationships: Record<string, string>;
   status: 'alive' | 'dead' | 'unknown';
+  imageBase64?: string;
 }
 
 export interface GameObject {
@@ -59,6 +60,7 @@ export interface GameObject {
   properties: Record<string, any>;
   location?: string;
   owner?: string;
+  imageBase64?: string;
 }
 
 export interface Location {
@@ -67,6 +69,7 @@ export interface Location {
   description: string;
   connections: string[];
   properties: Record<string, any>;
+  imageBase64?: string;
 }
 
 export interface WorldRule {

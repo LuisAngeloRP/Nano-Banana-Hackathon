@@ -32,6 +32,7 @@ interface WorldData {
     status: string;
     backstory?: string;
     motivation?: string;
+    imageBase64?: string;
   }>;
   objects: Array<{
     id: string;
@@ -40,6 +41,7 @@ interface WorldData {
     properties?: Record<string, any>;
     location?: string;
     owner?: string;
+    imageBase64?: string;
   }>;
   locations: Array<{
     id: string;
@@ -47,6 +49,7 @@ interface WorldData {
     description: string;
     connections?: string[];
     properties?: Record<string, any>;
+    imageBase64?: string;
   }>;
   rules: Array<{
     id: string;
@@ -71,7 +74,7 @@ export default function GameChat({ sessionId, onBackToMenu }: GameChatProps) {
   });
   const [worldData, setWorldData] = useState<WorldData | null>(null);
   const [showSidePanel, setShowSidePanel] = useState(false);
-  const [activeSideTab, setActiveSideTab] = useState<'finances' | 'characters' | 'objects' | 'locations' | 'rules'>('objects');
+  const [activeSideTab, setActiveSideTab] = useState<'gallery' | 'finances' | 'characters' | 'objects' | 'locations' | 'rules'>('gallery');
   const [financialData, setFinancialData] = useState<FinancialSummary | null>(null);
   const [isMillionaireScenario, setIsMillionaireScenario] = useState(false);
 
@@ -568,7 +571,15 @@ export default function GameChat({ sessionId, onBackToMenu }: GameChatProps) {
           </div>
 
           {/* Tabs del Panel */}
-          <div className="grid grid-cols-2 border-b border-gray-200 text-xs">
+          <div className="grid grid-cols-3 border-b border-gray-200 text-xs">
+            <Button
+              variant={activeSideTab === 'gallery' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveSideTab('gallery')}
+              className="rounded-none col-span-3"
+            >
+              🖼️ Galería
+            </Button>
             <Button
               variant={activeSideTab === 'characters' ? 'default' : 'ghost'}
               size="sm"
@@ -621,6 +632,110 @@ export default function GameChat({ sessionId, onBackToMenu }: GameChatProps) {
           {/* Contenido del Panel */}
           <ScrollArea className="flex-1 p-4">
 
+            {activeSideTab === 'gallery' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="font-semibold text-lg text-gray-700">🖼️ Galería del Mundo</h4>
+                  <div className="text-xs text-gray-500">
+                    {((worldData?.characters?.length || 0) + (worldData?.objects?.length || 0) + (worldData?.locations?.length || 0))} elementos
+                  </div>
+                </div>
+                
+                {/* Personajes con imágenes */}
+                {worldData?.characters && worldData.characters.length > 0 && (
+                  <div className="space-y-3">
+                    <h5 className="font-medium text-sm text-gray-600 border-b pb-1">👥 Personajes</h5>
+                    <div className="grid grid-cols-2 gap-3">
+                      {worldData.characters.map((character) => (
+                        <div key={character.id} className="text-center hover:bg-blue-50 p-2 rounded-lg transition-colors">
+                          {character.imageBase64 ? (
+                            <img 
+                              src={`data:image/png;base64,${character.imageBase64}`}
+                              alt={character.name}
+                              className="w-20 h-20 rounded-full object-cover border-2 border-blue-300 mx-auto mb-2 hover:border-blue-400 transition-colors"
+                            />
+                          ) : (
+                            <div className="w-20 h-20 rounded-full bg-blue-100 border-2 border-blue-300 mx-auto mb-2 flex items-center justify-center hover:border-blue-400 transition-colors">
+                              <span className="text-2xl">👤</span>
+                            </div>
+                          )}
+                          <p className="text-xs font-medium truncate">{character.name}</p>
+                          <p className="text-xs text-gray-500 capitalize">{character.status}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Objetos con imágenes */}
+                {worldData?.objects && worldData.objects.length > 0 && (
+                  <div className="space-y-3">
+                    <h5 className="font-medium text-sm text-gray-600 border-b pb-1">📦 Objetos</h5>
+                    <div className="grid grid-cols-3 gap-2">
+                      {worldData.objects.map((object) => (
+                        <div key={object.id} className="text-center hover:bg-green-50 p-2 rounded-lg transition-colors">
+                          {object.imageBase64 ? (
+                            <img 
+                              src={`data:image/png;base64,${object.imageBase64}`}
+                              alt={object.name}
+                              className="w-16 h-16 rounded-md object-cover border border-green-300 mx-auto mb-1 hover:border-green-400 transition-colors"
+                            />
+                          ) : (
+                            <div className="w-16 h-16 rounded-md bg-green-100 border border-green-300 mx-auto mb-1 flex items-center justify-center hover:border-green-400 transition-colors">
+                              <span className="text-lg">📦</span>
+                            </div>
+                          )}
+                          <p className="text-xs font-medium truncate">{object.name}</p>
+                          {object.location && (
+                            <p className="text-xs text-gray-400">📍 {object.location}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Ubicaciones con imágenes */}
+                {worldData?.locations && worldData.locations.length > 0 && (
+                  <div className="space-y-3">
+                    <h5 className="font-medium text-sm text-gray-600 border-b pb-1">🏢 Ubicaciones</h5>
+                    <div className="grid grid-cols-2 gap-3">
+                      {worldData.locations.map((location) => (
+                        <div key={location.id} className="text-center hover:bg-yellow-50 p-2 rounded-lg transition-colors">
+                          {location.imageBase64 ? (
+                            <img 
+                              src={`data:image/png;base64,${location.imageBase64}`}
+                              alt={location.name}
+                              className="w-20 h-20 rounded-lg object-cover border border-yellow-300 mx-auto mb-2 hover:border-yellow-400 transition-colors"
+                            />
+                          ) : (
+                            <div className="w-20 h-20 rounded-lg bg-yellow-100 border border-yellow-300 mx-auto mb-2 flex items-center justify-center hover:border-yellow-400 transition-colors">
+                              <span className="text-2xl">🏢</span>
+                            </div>
+                          )}
+                          <p className="text-xs font-medium truncate">{location.name}</p>
+                          {location.connections && location.connections.length > 0 && (
+                            <p className="text-xs text-gray-400">🔗 {location.connections.length} conexiones</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Mensaje si no hay elementos */}
+                {(!worldData?.characters || worldData.characters.length === 0) &&
+                 (!worldData?.objects || worldData.objects.length === 0) &&
+                 (!worldData?.locations || worldData.locations.length === 0) && (
+                  <div className="text-center py-8">
+                    <span className="text-4xl mb-2 block">🎭</span>
+                    <p className="text-gray-500 text-sm">El mundo aún está vacío...</p>
+                    <p className="text-gray-400 text-xs">¡Comienza a jugar para ver aparecer personajes, objetos y lugares!</p>
+                  </div>
+                )}
+              </div>
+            )}
+
             {activeSideTab === 'characters' && (
               <div className="space-y-3">
                 <h4 className="font-semibold text-sm text-gray-700">Personajes del Mundo</h4>
@@ -630,8 +745,16 @@ export default function GameChat({ sessionId, onBackToMenu }: GameChatProps) {
                   <div className="space-y-2">
                     {worldData.characters.map((character) => (
                       <div key={character.id} className="border rounded-lg p-3 bg-blue-50">
-                        <div className="flex items-start gap-2">
-                          <span className="text-lg">👤</span>
+                        <div className="flex items-start gap-3">
+                          {character.imageBase64 ? (
+                            <img 
+                              src={`data:image/png;base64,${character.imageBase64}`}
+                              alt={character.name}
+                              className="w-12 h-12 rounded-full object-cover border border-blue-300"
+                            />
+                          ) : (
+                            <span className="text-lg">👤</span>
+                          )}
                           <div className="flex-1">
                             <h5 className="font-medium text-sm">{character.name}</h5>
                             <p className="text-xs text-gray-600 mb-2">{character.description}</p>
@@ -667,8 +790,16 @@ export default function GameChat({ sessionId, onBackToMenu }: GameChatProps) {
                     <div className="space-y-2">
                       {worldData?.objects?.filter(obj => obj.owner === 'jugador' || obj.location === 'inventario').map((object) => (
                         <div key={object.id} className="border rounded-lg p-3 bg-blue-50 border-blue-200">
-                          <div className="flex items-start gap-2">
-                            <span className="text-lg">🎒</span>
+                          <div className="flex items-start gap-3">
+                            {object.imageBase64 ? (
+                              <img 
+                                src={`data:image/png;base64,${object.imageBase64}`}
+                                alt={object.name}
+                                className="w-12 h-12 rounded-md object-cover border border-blue-300"
+                              />
+                            ) : (
+                              <span className="text-lg">🎒</span>
+                            )}
                             <div className="flex-1">
                               <h5 className="font-medium text-sm">{object.name}</h5>
                               <p className="text-xs text-gray-600 mb-1">{object.description}</p>
@@ -694,8 +825,16 @@ export default function GameChat({ sessionId, onBackToMenu }: GameChatProps) {
                     <div className="space-y-2">
                       {worldData?.objects?.filter(obj => obj.owner !== 'jugador' && obj.location !== 'inventario').map((object) => (
                         <div key={object.id} className="border rounded-lg p-3 bg-green-50">
-                          <div className="flex items-start gap-2">
-                            <span className="text-lg">📦</span>
+                          <div className="flex items-start gap-3">
+                            {object.imageBase64 ? (
+                              <img 
+                                src={`data:image/png;base64,${object.imageBase64}`}
+                                alt={object.name}
+                                className="w-12 h-12 rounded-md object-cover border border-green-300"
+                              />
+                            ) : (
+                              <span className="text-lg">📦</span>
+                            )}
                             <div className="flex-1">
                               <h5 className="font-medium text-sm">{object.name}</h5>
                               <p className="text-xs text-gray-600 mb-2">{object.description}</p>
@@ -728,8 +867,16 @@ export default function GameChat({ sessionId, onBackToMenu }: GameChatProps) {
                   <div className="space-y-2">
                     {worldData.locations.map((location) => (
                       <div key={location.id} className="border rounded-lg p-3 bg-yellow-50">
-                        <div className="flex items-start gap-2">
-                          <span className="text-lg">🏢</span>
+                        <div className="flex items-start gap-3">
+                          {location.imageBase64 ? (
+                            <img 
+                              src={`data:image/png;base64,${location.imageBase64}`}
+                              alt={location.name}
+                              className="w-12 h-12 rounded-md object-cover border border-yellow-300"
+                            />
+                          ) : (
+                            <span className="text-lg">🏢</span>
+                          )}
                           <div className="flex-1">
                             <h5 className="font-medium text-sm">{location.name}</h5>
                             <p className="text-xs text-gray-600 mb-2">{location.description}</p>

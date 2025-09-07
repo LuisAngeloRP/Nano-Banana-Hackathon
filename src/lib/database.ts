@@ -100,6 +100,27 @@ class Database {
       // La columna ya existe, ignorar el error
     }
 
+    // Migración: Agregar columna image_base64 para objetos si no existe
+    try {
+      await run(`ALTER TABLE object_library ADD COLUMN image_base64 TEXT`);
+    } catch (error) {
+      // La columna ya existe, ignorar el error
+    }
+
+    // Migración: Agregar columna image_base64 para personajes si no existe
+    try {
+      await run(`ALTER TABLE character_library ADD COLUMN image_base64 TEXT`);
+    } catch (error) {
+      // La columna ya existe, ignorar el error
+    }
+
+    // Migración: Agregar columna image_base64 para ubicaciones si no existe
+    try {
+      await run(`ALTER TABLE location_library ADD COLUMN image_base64 TEXT`);
+    } catch (error) {
+      // La columna ya existe, ignorar el error
+    }
+
     // Tabla de transacciones financieras
     await run(`
       CREATE TABLE IF NOT EXISTS financial_transactions (
@@ -141,6 +162,7 @@ class Database {
         backstory TEXT,
         personality TEXT,
         category TEXT DEFAULT 'general',
+        image_base64 TEXT,
         usage_count INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
@@ -155,6 +177,7 @@ class Database {
         properties TEXT NOT NULL,
         category TEXT DEFAULT 'general',
         rarity TEXT DEFAULT 'common',
+        image_base64 TEXT,
         usage_count INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
@@ -169,6 +192,7 @@ class Database {
         type TEXT DEFAULT 'general',
         atmosphere TEXT,
         connections_info TEXT,
+        image_base64 TEXT,
         usage_count INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
@@ -629,14 +653,15 @@ Responde siempre en español y mantén la tensión.`,
     backstory?: string;
     personality?: string;
     category?: string;
+    imageBase64?: string;
   }): Promise<string> {
     await this.ensureInitialized();
     const run = promisify(this.db.run.bind(this.db)) as (sql: string, params?: any[]) => Promise<any>;
     const characterId = `char_lib_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
     await run(`
-      INSERT INTO character_library (id, name, description, traits, backstory, personality, category)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO character_library (id, name, description, traits, backstory, personality, category, image_base64)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       characterId,
       character.name,
@@ -644,7 +669,8 @@ Responde siempre en español y mantén la tensión.`,
       JSON.stringify(character.traits),
       character.backstory || '',
       character.personality || '',
-      character.category || 'general'
+      character.category || 'general',
+      character.imageBase64 || null
     ]);
 
     return characterId;
@@ -675,6 +701,7 @@ Responde siempre en español y mantén la tensión.`,
       backstory: row.backstory,
       personality: row.personality,
       category: row.category,
+      imageBase64: row.image_base64,
       usageCount: row.usage_count
     }));
   }
@@ -686,21 +713,23 @@ Responde siempre en español y mantén la tensión.`,
     properties: Record<string, any>;
     category?: string;
     rarity?: string;
+    imageBase64?: string;
   }): Promise<string> {
     await this.ensureInitialized();
     const run = promisify(this.db.run.bind(this.db)) as (sql: string, params?: any[]) => Promise<any>;
     const objectId = `obj_lib_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
     await run(`
-      INSERT INTO object_library (id, name, description, properties, category, rarity)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO object_library (id, name, description, properties, category, rarity, image_base64)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `, [
       objectId,
       object.name,
       object.description,
       JSON.stringify(object.properties),
       object.category || 'general',
-      object.rarity || 'common'
+      object.rarity || 'common',
+      object.imageBase64 || null
     ]);
 
     return objectId;
@@ -730,6 +759,7 @@ Responde siempre en español y mantén la tensión.`,
       properties: JSON.parse(row.properties),
       category: row.category,
       rarity: row.rarity,
+      imageBase64: row.image_base64,
       usageCount: row.usage_count
     }));
   }
@@ -741,21 +771,23 @@ Responde siempre en español y mantén la tensión.`,
     type?: string;
     atmosphere?: string;
     connectionsInfo?: string;
+    imageBase64?: string;
   }): Promise<string> {
     await this.ensureInitialized();
     const run = promisify(this.db.run.bind(this.db)) as (sql: string, params?: any[]) => Promise<any>;
     const locationId = `loc_lib_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
     await run(`
-      INSERT INTO location_library (id, name, description, type, atmosphere, connections_info)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO location_library (id, name, description, type, atmosphere, connections_info, image_base64)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `, [
       locationId,
       location.name,
       location.description,
       location.type || 'general',
       location.atmosphere || '',
-      location.connectionsInfo || ''
+      location.connectionsInfo || '',
+      location.imageBase64 || null
     ]);
 
     return locationId;
@@ -785,6 +817,7 @@ Responde siempre en español y mantén la tensión.`,
       type: row.type,
       atmosphere: row.atmosphere,
       connectionsInfo: row.connections_info,
+      imageBase64: row.image_base64,
       usageCount: row.usage_count
     }));
   }

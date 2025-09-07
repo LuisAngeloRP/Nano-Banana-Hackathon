@@ -367,13 +367,128 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Mundo no encontrado' }, { status: 404 });
       }
 
+      // Obtener imágenes de la biblioteca para enriquecer los datos del mundo
+      const charactersLibrary = await db.getCharactersFromLibrary(undefined, 1000);
+      const objectsLibrary = await db.getObjectsFromLibrary(undefined, 1000);
+      const locationsLibrary = await db.getLocationsFromLibrary(undefined, 1000);
+
+      // Enriquecer personajes con imágenes
+      const enrichedCharacters = (world.characters || []).map(character => {
+        const libraryChar = charactersLibrary.find(c => 
+          c.name.toLowerCase() === character.name.toLowerCase()
+        );
+        return {
+          ...character,
+          imageBase64: libraryChar?.imageBase64
+        };
+      });
+
+      // Enriquecer objetos con imágenes
+      const enrichedObjects = (world.objects || []).map(object => {
+        const libraryObj = objectsLibrary.find(o => 
+          o.name.toLowerCase() === object.name.toLowerCase()
+        );
+        return {
+          ...object,
+          imageBase64: libraryObj?.imageBase64
+        };
+      });
+
+      // Enriquecer ubicaciones con imágenes
+      const enrichedLocations = (world.locations || []).map(location => {
+        const libraryLoc = locationsLibrary.find(l => 
+          l.name.toLowerCase() === location.name.toLowerCase()
+        );
+        return {
+          ...location,
+          imageBase64: libraryLoc?.imageBase64
+        };
+      });
+
       return NextResponse.json({
-        characters: world.characters || [],
-        objects: world.objects || [],
-        locations: world.locations || [],
+        characters: enrichedCharacters,
+        objects: enrichedObjects,
+        locations: enrichedLocations,
         rules: world.rules || [],
         currentState: world.currentState || {}
       });
+    }
+
+    if (action === 'regenerate_images') {
+      try {
+        const db = getDatabase();
+        const { ImageGenerator } = await import('../../../lib/imageGenerator');
+        
+        let regeneratedCount = 0;
+        
+        // Regenerar imágenes para personajes sin imagen
+        const characters = await db.getCharactersFromLibrary(undefined, 1000);
+        for (const char of characters) {
+          if (!char.imageBase64) {
+            try {
+              const generatedImage = await ImageGenerator.generateCharacterMockup({
+                name: char.name
+              });
+              await db.saveCharacterToLibrary({
+                ...char,
+                imageBase64: generatedImage.base64
+              });
+              regeneratedCount++;
+            } catch (error) {
+              console.error(`Error regenerando imagen para personaje ${char.name}:`, error);
+            }
+          }
+        }
+        
+        // Regenerar imágenes para objetos sin imagen
+        const objects = await db.getObjectsFromLibrary(undefined, 1000);
+        for (const obj of objects) {
+          if (!obj.imageBase64) {
+            try {
+              const generatedImage = await ImageGenerator.generateObjectMockup({
+                name: obj.name
+              });
+              await db.saveObjectToLibrary({
+                ...obj,
+                imageBase64: generatedImage.base64
+              });
+              regeneratedCount++;
+            } catch (error) {
+              console.error(`Error regenerando imagen para objeto ${obj.name}:`, error);
+            }
+          }
+        }
+        
+        // Regenerar imágenes para ubicaciones sin imagen
+        const locations = await db.getLocationsFromLibrary(undefined, 1000);
+        for (const loc of locations) {
+          if (!loc.imageBase64) {
+            try {
+              const generatedImage = await ImageGenerator.generateLocationMockup({
+                name: loc.name
+              });
+              await db.saveLocationToLibrary({
+                ...loc,
+                imageBase64: generatedImage.base64
+              });
+              regeneratedCount++;
+            } catch (error) {
+              console.error(`Error regenerando imagen para ubicación ${loc.name}:`, error);
+            }
+          }
+        }
+        
+        return NextResponse.json({ 
+          success: true, 
+          regeneratedCount,
+          message: `Se regeneraron ${regeneratedCount} imágenes` 
+        });
+      } catch (error) {
+        console.error('Error regenerando imágenes:', error);
+        return NextResponse.json({ 
+          error: 'Error regenerando imágenes' 
+        }, { status: 500 });
+      }
     }
 
     if (action === 'get_financial_data') {

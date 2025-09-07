@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { GameWorld, StoryEntry, GameScenario } from '@/types/game';
 import { getDatabase } from './database';
+import { ImageGenerator } from './imageGenerator';
 
 class GeminiService {
   private genAI: GoogleGenerativeAI;
@@ -249,6 +250,18 @@ REGLA ABSOLUTA DE CONSISTENCIA NARRATIVA:
           if (parsed.changes.newCharacters) {
             for (const char of parsed.changes.newCharacters) {
               try {
+                // Generar imagen mockup para el personaje
+                let imageBase64: string | undefined;
+                try {
+                  const generatedImage = await ImageGenerator.generateCharacterMockup({
+                    name: char.name || char.id || 'Personaje Sin Nombre'
+                  });
+                  imageBase64 = generatedImage.base64;
+                } catch (imgError) {
+                  console.error('Error generando imagen para personaje nuevo:', imgError);
+                  imageBase64 = undefined; // Continuar sin imagen si falla
+                }
+
                 // Auto-completar datos faltantes en lugar de omitir
                 const completedChar = {
                   name: char.name || char.id || 'Personaje Sin Nombre',
@@ -256,7 +269,8 @@ REGLA ABSOLUTA DE CONSISTENCIA NARRATIVA:
                   traits: char.traits || ['misterioso'],
                   backstory: char.backstory || '',
                   personality: char.motivation || char.personality || '',
-                  category: 'ai_generated'
+                  category: 'ai_generated',
+                  imageBase64
                 };
                 
                 await db.saveCharacterToLibrary(completedChar);
@@ -271,12 +285,25 @@ REGLA ABSOLUTA DE CONSISTENCIA NARRATIVA:
             for (const obj of parsed.changes.newObjects) {
               try {
                 // Auto-completar datos faltantes en lugar de omitir
+                // Generar imagen mockup para el objeto
+                let imageBase64: string | undefined;
+                try {
+                  const generatedImage = await ImageGenerator.generateObjectMockup({
+                    name: obj.name || obj.id || 'Objeto Sin Nombre'
+                  });
+                  imageBase64 = generatedImage.base64;
+                } catch (imgError) {
+                  console.error('Error generando imagen para objeto:', imgError);
+                  imageBase64 = undefined; // Continuar sin imagen si falla
+                }
+
                 const completedObj = {
                   name: obj.name || obj.id || 'Objeto Sin Nombre',
                   description: obj.description || `Objeto que apareció en la historia`,
                   properties: obj.properties || {},
                   category: 'ai_generated',
-                  rarity: obj.properties?.rarity || obj.rarity || 'common'
+                  rarity: obj.properties?.rarity || obj.rarity || 'common',
+                  imageBase64
                 };
                 
                 await db.saveObjectToLibrary(completedObj);
@@ -290,13 +317,26 @@ REGLA ABSOLUTA DE CONSISTENCIA NARRATIVA:
           if (parsed.changes.newLocations) {
             for (const loc of parsed.changes.newLocations) {
               try {
+                // Generar imagen mockup para la ubicación
+                let imageBase64: string | undefined;
+                try {
+                  const generatedImage = await ImageGenerator.generateLocationMockup({
+                    name: loc.name || loc.id || 'Ubicación Sin Nombre'
+                  });
+                  imageBase64 = generatedImage.base64;
+                } catch (imgError) {
+                  console.error('Error generando imagen para ubicación nueva:', imgError);
+                  imageBase64 = undefined; // Continuar sin imagen si falla
+                }
+
                 // Auto-completar datos faltantes en lugar de omitir
                 const completedLoc = {
                   name: loc.name || loc.id || 'Ubicación Sin Nombre',
                   description: loc.description || `Ubicación que apareció en la historia`,
                   type: 'ai_generated',
                   atmosphere: loc.properties?.atmosphere || loc.atmosphere || '',
-                  connectionsInfo: loc.connections?.join(', ') || ''
+                  connectionsInfo: loc.connections?.join(', ') || '',
+                  imageBase64
                 };
                 
                 await db.saveLocationToLibrary(completedLoc);
@@ -845,6 +885,18 @@ REQUISITOS ESPECÍFICOS:
         if (parsed.characters) {
           for (const char of parsed.characters) {
             try {
+              // Generar imagen mockup para el personaje
+              let imageBase64: string | undefined;
+              try {
+                const generatedImage = await ImageGenerator.generateCharacterMockup({
+                  name: char.name || char.id || 'Personaje Sin Nombre'
+                });
+                imageBase64 = generatedImage.base64;
+              } catch (imgError) {
+                console.error('Error generando imagen para personaje:', imgError);
+                imageBase64 = undefined; // Continuar sin imagen si falla
+              }
+
               // Validar que el personaje tenga datos mínimos requeridos
               // Auto-completar datos faltantes en lugar de omitir
               const completedChar = {
@@ -853,7 +905,8 @@ REQUISITOS ESPECÍFICOS:
                 traits: char.traits || ['misterioso'],
                 backstory: char.backstory || '',
                 personality: char.motivation || char.personality || '',
-                category: 'initial_generation'
+                category: 'initial_generation',
+                imageBase64
               };
               
               await db.saveCharacterToLibrary(completedChar);
@@ -869,12 +922,25 @@ REQUISITOS ESPECÍFICOS:
             try {
               // Validar que el objeto tenga datos mínimos requeridos
               // Auto-completar datos faltantes en lugar de omitir
+              // Generar imagen mockup para el objeto
+              let imageBase64: string | undefined;
+              try {
+                const generatedImage = await ImageGenerator.generateObjectMockup({
+                  name: obj.name || obj.id || 'Objeto Sin Nombre'
+                });
+                imageBase64 = generatedImage.base64;
+              } catch (imgError) {
+                console.error('Error generando imagen para objeto:', imgError);
+                imageBase64 = undefined; // Continuar sin imagen si falla
+              }
+
               const completedObj = {
                 name: obj.name || obj.id || 'Objeto Sin Nombre',
                 description: obj.description || `Objeto del mundo inicial`,
                 properties: obj.properties || {},
                 category: 'initial_generation',
-                rarity: obj.properties?.rarity || obj.rarity || 'common'
+                rarity: obj.properties?.rarity || obj.rarity || 'common',
+                imageBase64
               };
               
               await db.saveObjectToLibrary(completedObj);
@@ -888,6 +954,18 @@ REQUISITOS ESPECÍFICOS:
         if (parsed.locations) {
           for (const loc of parsed.locations) {
             try {
+              // Generar imagen mockup para la ubicación
+              let imageBase64: string | undefined;
+              try {
+                const generatedImage = await ImageGenerator.generateLocationMockup({
+                  name: loc.name || loc.id || 'Ubicación Sin Nombre'
+                });
+                imageBase64 = generatedImage.base64;
+              } catch (imgError) {
+                console.error('Error generando imagen para ubicación:', imgError);
+                imageBase64 = undefined; // Continuar sin imagen si falla
+              }
+
               // Validar que la ubicación tenga datos mínimos requeridos
               // Auto-completar datos faltantes en lugar de omitir
               const completedLoc = {
@@ -895,7 +973,8 @@ REQUISITOS ESPECÍFICOS:
                 description: loc.description || `Ubicación del mundo inicial`,
                 type: 'initial_generation',
                 atmosphere: loc.properties?.atmosphere || loc.atmosphere || '',
-                connectionsInfo: loc.connections?.join(', ') || ''
+                connectionsInfo: loc.connections?.join(', ') || '',
+                imageBase64
               };
               
               await db.saveLocationToLibrary(completedLoc);
