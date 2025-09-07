@@ -4,10 +4,11 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { GameScenario } from '@/types/game';
-import { Play, Clock, Target, Sparkles, ArrowRight } from 'lucide-react';
+import { Play, Clock, Target, Sparkles, ArrowRight, History } from 'lucide-react';
 
 interface GameMenuProps {
   onStartGame: (sessionId: string) => void;
+  onShowHistory?: () => void;
 }
 
 interface InitialNarrativeModal {
@@ -16,7 +17,7 @@ interface InitialNarrativeModal {
   scenarioTitle: string;
 }
 
-export default function GameMenu({ onStartGame }: GameMenuProps) {
+export default function GameMenu({ onStartGame, onShowHistory }: GameMenuProps) {
   const [scenarios, setScenarios] = useState<GameScenario[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedScenario, setSelectedScenario] = useState<string | null>(null);
@@ -148,10 +149,22 @@ export default function GameMenu({ onStartGame }: GameMenuProps) {
               Historias Evolutivas
             </span>
           </h1>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+          <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-6">
             Experimenta aventuras narrativas donde cada decisión cuenta y la historia evoluciona 
             con inteligencia artificial. Elige tu desafío y vive una experiencia única.
           </p>
+          
+          {/* History Button */}
+          {onShowHistory && (
+            <Button
+              variant="outline"
+              onClick={onShowHistory}
+              className="flex items-center gap-2"
+            >
+              <History className="w-4 h-4" />
+              Ver historial de sesiones
+            </Button>
+          )}
         </div>
 
         {/* Scenarios Grid */}

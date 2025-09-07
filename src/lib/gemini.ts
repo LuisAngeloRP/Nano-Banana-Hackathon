@@ -46,88 +46,167 @@ ${userAction}
 INSTRUCCIONES:
 1. Responde de manera narrativa y envolvente en español
 2. Mantén coherencia con la historia previa y las reglas del mundo
-3. Si la acción no es válida o rompe las reglas, explica por qué y ofrece alternativas
-4. Proporciona consecuencias realistas para las acciones
-5. Incluye detalles del mundo que enriquezcan la experiencia
-6. Si es apropiado, avanza la historia al siguiente día
-7. SIEMPRE termina tu respuesta con una pregunta directa al jugador sobre qué quiere hacer a continuación
-8. Proporciona 2-3 opciones de acción sugeridas, pero permite libertad creativa
+3. VALIDA LA LÓGICA: Si el jugador menciona algo que no tiene/sabe, narra que no lo tiene
+4. NO ASUMAS objetos, conocimientos o habilidades que no se han establecido
+5. EJECUTA las acciones posibles, REDIRIGE las imposibles hacia obtener lo necesario
+6. Proporciona consecuencias REALISTAS e INMEDIATAS para todas las acciones
+7. Si una acción requiere algo no disponible, narra el obstáculo y las consecuencias
+8. NO sugieras qué hacer ni ofrezcas opciones - deja que el jugador decida
+9. NO hagas preguntas al final - simplemente narra lo que sucede
+10. Incluye detalles del mundo que enriquezcan la experiencia
+11. Si es apropiado, avanza la historia al siguiente día
+12. PUEDES CREAR nuevos personajes, objetos y ubicaciones según sea necesario para la historia
+13. PUEDES EDITAR personajes, objetos y ubicaciones existentes para reflejar cambios en la historia
+14. Sé un NARRADOR REACTIVO, no un guía - el jugador es responsable de sus decisiones
 
 FORMATO DE RESPUESTA:
 Responde SOLO con un JSON válido que contenga:
 {
-  "response": "Tu respuesta narrativa aquí que SIEMPRE termine con una pregunta y opciones de acción",
+  "response": "Tu respuesta narrativa que describe lo que sucede como resultado de la acción del jugador (sin saltos de línea, usa espacios)",
   "worldUpdates": {
-    "characters": [array de personajes actualizados],
-    "objects": [array de objetos actualizados],
-    "locations": [array de ubicaciones actualizadas],
-    "rules": [array de reglas del mundo],
-    "currentState": {objeto con el estado actual del juego}
+    "characters": [array COMPLETO de todos los personajes del mundo, incluyendo nuevos y editados],
+    "objects": [array COMPLETO de todos los objetos del mundo, incluyendo nuevos y editados],
+    "locations": [array COMPLETO de todas las ubicaciones del mundo, incluyendo nuevas y editadas],
+    "rules": [array de reglas del mundo, incluyendo nuevas si es necesario],
+    "currentState": {objeto con el estado actual del juego actualizado}
   },
   "shouldAdvanceDay": boolean,
   "gameEnded": boolean,
   "endReason": "razón del fin del juego si aplica",
-  "newContent": {
-    "charactersToSave": [personajes nuevos para guardar en biblioteca],
-    "objectsToSave": [objetos nuevos para guardar en biblioteca],
-    "locationsToSave": [ubicaciones nuevas para guardar en biblioteca]
+  "changes": {
+    "newCharacters": [personajes completamente nuevos creados en esta respuesta],
+    "editedCharacters": [personajes existentes que fueron modificados],
+    "newObjects": [objetos completamente nuevos creados en esta respuesta],
+    "editedObjects": [objetos existentes que fueron modificados],
+    "newLocations": [ubicaciones completamente nuevas creadas en esta respuesta],
+    "editedLocations": [ubicaciones existentes que fueron modificadas],
+    "summary": "Breve resumen de los cambios realizados al mundo"
   }
-}`;
+}
+
+IMPORTANTE: 
+- El JSON debe ser válido y parseable
+- NO uses saltos de línea dentro de strings
+- NO uses comillas dobles dentro de strings (usa comillas simples)
+- NO incluyas caracteres especiales o de control
+- Asegúrate de cerrar todas las llaves y corchetes
+- NO incluyas texto antes o después del JSON
+- Responde ÚNICAMENTE con el JSON, sin explicaciones adicionales`;
 
     try {
       const result = await this.model.generateContent(fullPrompt);
       const response = result.response.text();
       
       // Limpiar la respuesta para obtener solo el JSON
+      let jsonText = '';
+      
+      // Buscar el JSON más estrictamente
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
-        throw new Error('Respuesta no válida de Gemini');
+        throw new Error('No se encontró JSON válido en la respuesta de Gemini');
       }
-
-      const parsed = JSON.parse(jsonMatch[0]);
       
-      // Guardar contenido nuevo en la biblioteca si existe
-      if (parsed.newContent) {
-        const db = getDatabase();
+      jsonText = jsonMatch[0];
+      
+      // Limpiar caracteres problemáticos comunes
+      jsonText = this.sanitizeJSON(jsonText);
+
+      let parsed;
+      try {
+        parsed = JSON.parse(jsonText);
+      } catch (parseError) {
+        console.error('Error parseando JSON:', parseError);
+        console.error('JSON problemático:', jsonText.substring(0, 500) + '...');
+        console.error('Respuesta completa de Gemini:', response);
         
-        // Guardar personajes nuevos
-        if (parsed.newContent.charactersToSave) {
-          for (const char of parsed.newContent.charactersToSave) {
-            await db.saveCharacterToLibrary({
-              name: char.name,
-              description: char.description,
-              traits: char.traits || [],
-              backstory: char.backstory,
-              personality: char.personality,
-              category: 'ai_generated'
-            });
-          }
-        }
+        // Intento de rescate: extraer solo la respuesta narrativa si es posible
+        const responseMatch = response.match(/"response":\s*"([^"]+)"/);
+        const fallbackResponse = responseMatch ? responseMatch[1] : 'La acción se ejecuta pero el resultado no es claro debido a un error técnico.';
         
-        // Guardar objetos nuevos
-        if (parsed.newContent.objectsToSave) {
-          for (const obj of parsed.newContent.objectsToSave) {
-            await db.saveObjectToLibrary({
-              name: obj.name,
-              description: obj.description,
-              properties: obj.properties || {},
-              category: 'ai_generated',
-              rarity: obj.rarity || 'common'
-            });
+        return {
+          response: fallbackResponse,
+          updatedWorld: world, // Mantener estado actual
+          shouldAdvanceDay: false,
+          gameEnded: false
+        };
+      }
+      
+      // Procesar cambios en el mundo y guardar nuevo contenido en la biblioteca
+      if (parsed.changes) {
+        try {
+          const db = getDatabase();
+          
+          // Guardar personajes completamente nuevos en la biblioteca
+          if (parsed.changes.newCharacters) {
+            for (const char of parsed.changes.newCharacters) {
+              try {
+                if (char.name && char.description) {
+                  await db.saveCharacterToLibrary({
+                    name: char.name,
+                    description: char.description,
+                    traits: char.traits || [],
+                    backstory: char.backstory || '',
+                    personality: char.motivation || char.personality || '',
+                    category: 'ai_generated'
+                  });
+                } else {
+                  console.warn('Personaje nuevo omitido por datos insuficientes:', char);
+                }
+              } catch (charError) {
+                console.error('Error guardando personaje nuevo:', charError);
+              }
+            }
           }
-        }
-        
-        // Guardar ubicaciones nuevas
-        if (parsed.newContent.locationsToSave) {
-          for (const loc of parsed.newContent.locationsToSave) {
-            await db.saveLocationToLibrary({
-              name: loc.name,
-              description: loc.description,
-              type: loc.type || 'ai_generated',
-              atmosphere: loc.atmosphere,
-              connectionsInfo: loc.connectionsInfo
-            });
+          
+          // Guardar objetos completamente nuevos en la biblioteca
+          if (parsed.changes.newObjects) {
+            for (const obj of parsed.changes.newObjects) {
+              try {
+                if (obj.name && obj.description) {
+                  await db.saveObjectToLibrary({
+                    name: obj.name,
+                    description: obj.description,
+                    properties: obj.properties || {},
+                    category: 'ai_generated',
+                    rarity: obj.properties?.rarity || obj.rarity || 'common'
+                  });
+                } else {
+                  console.warn('Objeto nuevo omitido por datos insuficientes:', obj);
+                }
+              } catch (objError) {
+                console.error('Error guardando objeto nuevo:', objError);
+              }
+            }
           }
+          
+          // Guardar ubicaciones completamente nuevas en la biblioteca
+          if (parsed.changes.newLocations) {
+            for (const loc of parsed.changes.newLocations) {
+              try {
+                if (loc.name && loc.description) {
+                  await db.saveLocationToLibrary({
+                    name: loc.name,
+                    description: loc.description,
+                    type: 'ai_generated',
+                    atmosphere: loc.properties?.atmosphere || loc.atmosphere || '',
+                    connectionsInfo: loc.connections?.join(', ') || ''
+                  });
+                } else {
+                  console.warn('Ubicación nueva omitida por datos insuficientes:', loc);
+                }
+              } catch (locError) {
+                console.error('Error guardando ubicación nueva:', locError);
+              }
+            }
+          }
+          
+          // Log de cambios para debugging
+          if (parsed.changes.summary) {
+            console.log('Cambios en el mundo:', parsed.changes.summary);
+          }
+          
+        } catch (error) {
+          console.error('Error general procesando cambios del mundo:', error);
         }
       }
       
@@ -149,12 +228,28 @@ Responde SOLO con un JSON válido que contenga:
       
       // Respuesta de fallback
       return {
-        response: `Hubo un problema procesando tu acción. Por favor, intenta de nuevo con una acción más específica.`,
+        response: `Hubo un problema procesando tu acción. El mundo permanece en su estado actual.`,
         updatedWorld: {},
         shouldAdvanceDay: false,
         gameEnded: false
       };
     }
+  }
+
+  private sanitizeJSON(jsonText: string): string {
+    return jsonText
+      // Eliminar caracteres de control
+      .replace(/[\u0000-\u001F\u007F-\u009F]/g, '')
+      // Manejar saltos de línea dentro de strings
+      .replace(/"\s*\n\s*"/g, '" "')
+      // Limpiar espacios extras
+      .replace(/\s+/g, ' ')
+      // Eliminar comentarios si los hay
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/.*$/gm, '')
+      // Escapar comillas dentro de strings si es necesario
+      .replace(/(?<!\\)"/g, '"')
+      .trim();
   }
 
   private buildContextPrompt(
@@ -173,23 +268,23 @@ ESTADO DEL MUNDO:
 `;
 
     if (world.characters.length > 0) {
-      prompt += `\nPERSONAJES:
+      prompt += `\nPERSONAJES ACTUALES (puedes editarlos o crear nuevos):
 ${world.characters.map(char => 
-  `- ${char.name}: ${char.description} (Estado: ${char.status})`
+  `- ID: ${char.id} | ${char.name}: ${char.description} (Estado: ${char.status})${char.traits ? ` [${char.traits.join(', ')}]` : ''}`
 ).join('\n')}`;
     }
 
     if (world.objects.length > 0) {
-      prompt += `\nOBJETOS IMPORTANTES:
+      prompt += `\nOBJETOS ACTUALES (puedes editarlos o crear nuevos):
 ${world.objects.map(obj => 
-  `- ${obj.name}: ${obj.description} ${obj.location ? `(en ${obj.location})` : ''}`
+  `- ID: ${obj.id} | ${obj.name}: ${obj.description} ${obj.location ? `(en ${obj.location})` : ''}${obj.owner ? ` [Propietario: ${obj.owner}]` : ''}`
 ).join('\n')}`;
     }
 
     if (world.locations.length > 0) {
-      prompt += `\nUBICACIONES:
+      prompt += `\nUBICACIONES ACTUALES (puedes editarlas o crear nuevas):
 ${world.locations.map(loc => 
-  `- ${loc.name}: ${loc.description}`
+  `- ID: ${loc.id} | ${loc.name}: ${loc.description}${loc.connections ? ` [Conecta con: ${loc.connections.join(', ')}]` : ''}`
 ).join('\n')}`;
     }
 
@@ -202,10 +297,32 @@ ${world.rules
     }
 
     if (Object.keys(world.currentState).length > 0) {
-      prompt += `\nESTADO ACTUAL:
+      prompt += `\nESTADO ACTUAL DEL JUGADOR:
 ${Object.entries(world.currentState)
   .map(([key, value]) => `- ${key}: ${value}`)
   .join('\n')}`;
+    }
+
+    // Agregar inventario explícito si existe
+    const playerInventory = world.objects.filter(obj => obj.owner === 'jugador' || obj.location === 'inventario');
+    if (playerInventory.length > 0) {
+      prompt += `\nINVENTARIO DEL JUGADOR:
+${playerInventory.map(obj => `- ${obj.name}: ${obj.description}`).join('\n')}`;
+    } else {
+      prompt += `\nINVENTARIO DEL JUGADOR: Vacío (no posee objetos actualmente)`;
+    }
+
+    // Agregar habilidades y conocimientos establecidos
+    if (world.currentState?.skills || world.currentState?.knowledge) {
+      prompt += `\nHABILIDADES Y CONOCIMIENTOS DEL JUGADOR:`;
+      if (world.currentState.skills) {
+        prompt += `\n- Habilidades: ${world.currentState.skills}`;
+      }
+      if (world.currentState.knowledge) {
+        prompt += `\n- Conocimientos: ${world.currentState.knowledge}`;
+      }
+    } else {
+      prompt += `\nHABILIDADES Y CONOCIMIENTOS: Solo las básicas (caminar, hablar, conocimiento general básico)`;
     }
 
     if (recentHistory.length > 0) {
@@ -218,7 +335,33 @@ ${recentHistory.map(entry => {
     }
 
     prompt += `\n\nREGLAS DEL ESCENARIO:
-${scenario.rules.map(rule => `- ${rule}`).join('\n')}`;
+${scenario.rules.map(rule => `- ${rule}`).join('\n')}
+
+CAPACIDADES DE EDICIÓN:
+- Para EDITAR un elemento existente: Mantén el mismo ID pero actualiza sus propiedades
+- Para CREAR un elemento nuevo: Asigna un nuevo ID único (ej: "char_nuevo_001")
+- Ejemplos de ediciones válidas:
+  * Cambiar estado de un personaje: vivo -> herido -> muerto
+  * Mover un objeto de ubicación: "sala principal" -> "inventario del jugador"
+  * Modificar conexiones entre ubicaciones: agregar nuevos caminos
+  * Actualizar descripciones para reflejar daños, cambios, etc.
+- Los elementos eliminados no deben aparecer en worldUpdates
+- Siempre incluye TODOS los elementos actuales en worldUpdates, incluso los no modificados
+
+ESTILO NARRATIVO:
+- REACTIVO, no directivo: "El guardia te golpea con su bastón. Sientes un dolor punzante en el brazo."
+- NO digas: "¿Qué quieres hacer ahora? Puedes: A) Huir, B) Atacar, C) Negociar"
+- SÍ muestra consecuencias: "Tu brazo izquierdo está fracturado. La sangre mancha tu camisa."
+- El jugador decide qué hacer sin tu guía - tú solo narras los resultados
+
+VALIDACIÓN LÓGICA - EJEMPLOS:
+- Jugador: "Uso mi pistola" → Si no tiene pistola: "Buscas en tu ropa una pistola, pero no tienes ninguna."
+- Jugador: "Mezclo veneno" → Si no tiene veneno: "Necesitas sustancias tóxicas que no posees actualmente."
+- Jugador: "Hackeo el sistema" → Si no sabe programar: "Los códigos en la pantalla no tienen sentido para ti."
+- Jugador: "Conduzco el auto" → Si no hay auto: "No hay ningún vehículo disponible aquí."
+- SIEMPRE verifica el inventario actual y conocimientos establecidos antes de ejecutar
+
+REGLA FUNDAMENTAL: NO INVENTES que el jugador tiene algo. Si no está en su inventario/estado/historia, NO LO TIENE.`;
 
     return prompt;
   }
@@ -313,7 +456,7 @@ FORMATO DE RESPUESTA (JSON válido):
     "availableResources": "recursos al alcance del jugador",
     "mainObjective": "objetivo principal establecido"
   },
-  "initialNarrative": "Una narrativa inmersiva de 200-300 palabras que establezca la escena, describa la situación actual, presente a personajes relevantes, mencione objetos importantes y termine con una pregunta directa al jugador seguida de 2-3 opciones específicas de acción numeradas."
+  "initialNarrative": "Una narrativa inmersiva de 200-300 palabras que establezca la escena, describa la situación actual, presente a personajes relevantes, mencione objetos importantes y termine describiendo el momento presente, sin preguntas ni sugerencias - deja que el jugador tome la iniciativa."
 }
 
 REQUISITOS ESPECÍFICOS:
@@ -332,61 +475,89 @@ REQUISITOS ESPECÍFICOS:
         throw new Error('No se pudo generar el estado inicial del mundo');
       }
 
-      const parsed = JSON.parse(jsonMatch[0]);
+      let jsonText = this.sanitizeJSON(jsonMatch[0]);
+      let parsed;
+      
+      try {
+        parsed = JSON.parse(jsonText);
+      } catch (parseError) {
+        console.error('Error parseando JSON inicial:', parseError);
+        console.error('JSON problemático inicial:', jsonText.substring(0, 500) + '...');
+        throw new Error('JSON malformado en generación inicial');
+      }
       
       // Guardar contenido nuevo en la biblioteca automáticamente
-      const db = getDatabase();
-      
-      // Guardar personajes generados en la biblioteca
-      if (parsed.characters) {
-        for (const char of parsed.characters) {
-          try {
-            await db.saveCharacterToLibrary({
-              name: char.name,
-              description: char.description,
-              traits: char.traits || [],
-              backstory: char.backstory || '',
-              personality: char.motivation || '',
-              category: 'initial_generation'
-            });
-          } catch (error) {
-            console.error('Error guardando personaje en biblioteca:', error);
+      try {
+        const db = getDatabase();
+        
+        // Guardar personajes generados en la biblioteca
+        if (parsed.characters) {
+          for (const char of parsed.characters) {
+            try {
+              // Validar que el personaje tenga datos mínimos requeridos
+              if (char.name && char.description) {
+                await db.saveCharacterToLibrary({
+                  name: char.name,
+                  description: char.description,
+                  traits: char.traits || [],
+                  backstory: char.backstory || '',
+                  personality: char.motivation || '',
+                  category: 'initial_generation'
+                });
+              } else {
+                console.warn('Personaje omitido por datos insuficientes:', char);
+              }
+            } catch (error) {
+              console.error('Error guardando personaje en biblioteca:', error);
+            }
           }
         }
-      }
-      
-      // Guardar objetos generados en la biblioteca
-      if (parsed.objects) {
-        for (const obj of parsed.objects) {
-          try {
-            await db.saveObjectToLibrary({
-              name: obj.name,
-              description: obj.description,
-              properties: obj.properties || {},
-              category: 'initial_generation',
-              rarity: obj.properties?.rarity || 'common'
-            });
-          } catch (error) {
-            console.error('Error guardando objeto en biblioteca:', error);
+        
+        // Guardar objetos generados en la biblioteca
+        if (parsed.objects) {
+          for (const obj of parsed.objects) {
+            try {
+              // Validar que el objeto tenga datos mínimos requeridos
+              if (obj.name && obj.description) {
+                await db.saveObjectToLibrary({
+                  name: obj.name,
+                  description: obj.description,
+                  properties: obj.properties || {},
+                  category: 'initial_generation',
+                  rarity: obj.properties?.rarity || 'common'
+                });
+              } else {
+                console.warn('Objeto omitido por datos insuficientes:', obj);
+              }
+            } catch (error) {
+              console.error('Error guardando objeto en biblioteca:', error);
+            }
           }
         }
-      }
-      
-      // Guardar ubicaciones generadas en la biblioteca
-      if (parsed.locations) {
-        for (const loc of parsed.locations) {
-          try {
-            await db.saveLocationToLibrary({
-              name: loc.name,
-              description: loc.description,
-              type: 'initial_generation',
-              atmosphere: loc.properties?.atmosphere || '',
-              connectionsInfo: loc.connections?.join(', ') || ''
-            });
-          } catch (error) {
-            console.error('Error guardando ubicación en biblioteca:', error);
+        
+        // Guardar ubicaciones generadas en la biblioteca
+        if (parsed.locations) {
+          for (const loc of parsed.locations) {
+            try {
+              // Validar que la ubicación tenga datos mínimos requeridos
+              if (loc.name && loc.description) {
+                await db.saveLocationToLibrary({
+                  name: loc.name,
+                  description: loc.description,
+                  type: 'initial_generation',
+                  atmosphere: loc.properties?.atmosphere || '',
+                  connectionsInfo: loc.connections?.join(', ') || ''
+                });
+              } else {
+                console.warn('Ubicación omitida por datos insuficientes:', loc);
+              }
+            } catch (error) {
+              console.error('Error guardando ubicación en biblioteca:', error);
+            }
           }
         }
+      } catch (error) {
+        console.error('Error general guardando contenido inicial en biblioteca:', error);
       }
       
       // Guardar la narrativa inicial como parte del estado actual
@@ -410,7 +581,7 @@ REQUISITOS ESPECÍFICOS:
         locations: [],
         rules: [],
         currentState: {
-          initialNarrative: "El mundo espera tu primera acción. ¿Qué quieres hacer?"
+          initialNarrative: "El mundo está listo. Tú decides qué hacer ahora."
         }
       };
     }
@@ -428,3 +599,4 @@ export function getGeminiService(): GeminiService {
 }
 
 export default GeminiService;
+

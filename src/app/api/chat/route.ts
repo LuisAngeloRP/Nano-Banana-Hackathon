@@ -94,6 +94,18 @@ export async function POST(request: NextRequest) {
         await db.updateGameWorld(sessionId, aiResponse.updatedWorld);
       }
 
+      // Verificar si hubo cambios significativos en el mundo
+      let worldChanges = null;
+      try {
+        const responseText = JSON.stringify(aiResponse);
+        if (responseText.includes('"changes"') && responseText.includes('"summary"')) {
+          const parsedResponse = JSON.parse(responseText);
+          worldChanges = parsedResponse.changes;
+        }
+      } catch (error) {
+        // No es crítico si no podemos parsear los cambios
+      }
+
       // Avanzar día si es necesario
       let newDay = session.currentDay;
       if (aiResponse.shouldAdvanceDay && session.currentDay < scenario.maxDays) {
@@ -111,7 +123,8 @@ export async function POST(request: NextRequest) {
         currentDay: newDay,
         maxDays: scenario.maxDays,
         gameEnded: aiResponse.gameEnded || newDay >= scenario.maxDays,
-        shouldAdvanceDay: aiResponse.shouldAdvanceDay
+        shouldAdvanceDay: aiResponse.shouldAdvanceDay,
+        worldChanges: worldChanges
       });
     }
 
@@ -135,6 +148,27 @@ export async function POST(request: NextRequest) {
         session,
         scenario,
         history: storyHistory
+      });
+    }
+
+    if (action === 'get_world_data') {
+      if (!sessionId) {
+        return NextResponse.json({ error: 'sessionId es requerido' }, { status: 400 });
+      }
+      
+      const db = getDatabase();
+      const world = await db.getGameWorld(sessionId);
+      
+      if (!world) {
+        return NextResponse.json({ error: 'Mundo no encontrado' }, { status: 404 });
+      }
+
+      return NextResponse.json({
+        characters: world.characters || [],
+        objects: world.objects || [],
+        locations: world.locations || [],
+        rules: world.rules || [],
+        currentState: world.currentState || {}
       });
     }
 

@@ -676,6 +676,140 @@ Responde siempre en español y mantén la tensión.`,
     const run = promisify(this.db.run.bind(this.db)) as (sql: string, params?: any[]) => Promise<any>;
     await run(`UPDATE ${table} SET usage_count = usage_count + 1 WHERE id = ?`, [id]);
   }
+
+  // Métodos para historial de sesiones
+  async getSessionHistory(limit: number = 20): Promise<(GameSession & { scenario: GameScenario, messageCount: number, lastActivity: Date })[]> {
+    await this.ensureInitialized();
+    const all = promisify(this.db.all.bind(this.db)) as (sql: string, params?: any[]) => Promise<any[]>;
+    
+    const query = `
+      SELECT 
+        gs.*,
+        s.title as scenario_title,
+        s.description as scenario_description,
+        s.rules as scenario_rules,
+        s.max_days as scenario_max_days,
+        COUNT(se.id) as message_count,
+        MAX(se.timestamp) as last_activity
+      FROM game_sessions gs
+      JOIN scenarios s ON gs.scenario_id = s.id
+      LEFT JOIN story_entries se ON gs.id = se.session_id
+      GROUP BY gs.id
+      ORDER BY gs.started_at DESC
+      LIMIT ?
+    `;
+    
+    const rows = await all(query, [limit]);
+    
+    return rows.map((row: any) => ({
+      id: row.id,
+      scenarioId: row.scenario_id,
+      currentDay: row.current_day,
+      isCompleted: Boolean(row.is_completed),
+      startedAt: new Date(row.started_at),
+      completedAt: row.completed_at ? new Date(row.completed_at) : undefined,
+      scenario: {
+        id: row.scenario_id,
+        title: row.scenario_title,
+        description: row.scenario_description,
+        initialPrompt: '',
+        rules: JSON.parse(row.scenario_rules || '[]'),
+        maxDays: row.scenario_max_days,
+        isActive: true,
+        createdAt: new Date()
+      },
+      messageCount: row.message_count || 0,
+      lastActivity: new Date(row.last_activity || row.started_at)
+    }));
+  }
+
+  async getSessionSummary(sessionId: string): Promise<{
+    session: GameSession;
+    scenario: GameScenario;
+    messageCount: number;
+    dayProgress: number;
+    lastMessage: string;
+    totalPlayTime: number; // en minutos
+  } | null> {
+    await this.ensureInitialized();
+    const get = promisify(this.db.get.bind(this.db)) as (sql: string, params?: any[]) => Promise<any>;
+    const all = promisify(this.db.all.bind(this.db)) as (sql: string, params?: any[]) => Promise<any[]>;
+    
+    // Obtener sesión y escenario
+    const sessionRow = await get(`
+      SELECT 
+        gs.*,
+        s.title as scenario_title,
+        s.description as scenario_description,
+        s.initial_prompt as scenario_initial_prompt,
+        s.rules as scenario_rules,
+        s.max_days as scenario_max_days
+      FROM game_sessions gs
+      JOIN scenarios s ON gs.scenario_id = s.id
+      WHERE gs.id = ?
+    `, [sessionId]);
+    
+    if (!sessionRow) return null;
+    
+    // Obtener estadísticas de mensajes
+    const messageStats = await get(`
+      SELECT 
+        COUNT(*) as message_count,
+        MIN(timestamp) as first_message,
+        MAX(timestamp) as last_message
+      FROM story_entries 
+      WHERE session_id = ?
+    `, [sessionId]);
+    
+    // Obtener último mensaje del usuario o IA
+    const lastMessageRow = await get(`
+      SELECT content, type 
+      FROM story_entries 
+      WHERE session_id = ? AND type IN ('user', 'ai')
+      ORDER BY timestamp DESC 
+      LIMIT 1
+    `, [sessionId]);
+    
+    // Calcular tiempo total de juego
+    const firstMessageTime = messageStats?.first_message ? new Date(messageStats.first_message) : sessionRow.started_at;
+    const lastMessageTime = messageStats?.last_message ? new Date(messageStats.last_message) : new Date(sessionRow.started_at);
+    const totalPlayTime = Math.round((lastMessageTime.getTime() - new Date(firstMessageTime).getTime()) / (1000 * 60));
+    
+    return {
+      session: {
+        id: sessionRow.id,
+        scenarioId: sessionRow.scenario_id,
+        currentDay: sessionRow.current_day,
+        isCompleted: Boolean(sessionRow.is_completed),
+        startedAt: new Date(sessionRow.started_at),
+        completedAt: sessionRow.completed_at ? new Date(sessionRow.completed_at) : undefined
+      },
+      scenario: {
+        id: sessionRow.scenario_id,
+        title: sessionRow.scenario_title,
+        description: sessionRow.scenario_description,
+        initialPrompt: sessionRow.scenario_initial_prompt,
+        rules: JSON.parse(sessionRow.scenario_rules),
+        maxDays: sessionRow.scenario_max_days,
+        isActive: true,
+        createdAt: new Date()
+      },
+      messageCount: messageStats?.message_count || 0,
+      dayProgress: Math.round((sessionRow.current_day / sessionRow.scenario_max_days) * 100),
+      lastMessage: lastMessageRow?.content || 'Sin mensajes',
+      totalPlayTime
+    };
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    await this.ensureInitialized();
+    const run = promisify(this.db.run.bind(this.db)) as (sql: string, params?: any[]) => Promise<any>;
+    
+    // Eliminar en orden debido a las foreign keys
+    await run('DELETE FROM story_entries WHERE session_id = ?', [sessionId]);
+    await run('DELETE FROM game_worlds WHERE session_id = ?', [sessionId]);
+    await run('DELETE FROM game_sessions WHERE id = ?', [sessionId]);
+  }
 }
 
 // Singleton instance

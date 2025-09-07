@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Send, Calendar, Target, Loader2 } from 'lucide-react';
+import { Send, Calendar, Target, Loader2, ChevronDown, ChevronUp, Users, Package, MapPin, Scroll } from 'lucide-react';
 import { ChatMessage } from '@/types/game';
 
 interface GameChatProps {
@@ -20,6 +20,41 @@ interface GameState {
   scenarioTitle: string;
 }
 
+interface WorldData {
+  characters: Array<{
+    id: string;
+    name: string;
+    description: string;
+    traits?: string[];
+    relationships?: Record<string, string>;
+    status: string;
+    backstory?: string;
+    motivation?: string;
+  }>;
+  objects: Array<{
+    id: string;
+    name: string;
+    description: string;
+    properties?: Record<string, any>;
+    location?: string;
+    owner?: string;
+  }>;
+  locations: Array<{
+    id: string;
+    name: string;
+    description: string;
+    connections?: string[];
+    properties?: Record<string, any>;
+  }>;
+  rules: Array<{
+    id: string;
+    description: string;
+    type: string;
+    isActive: boolean;
+  }>;
+  currentState: Record<string, any>;
+}
+
 export default function GameChat({ sessionId, onBackToMenu }: GameChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [currentMessage, setCurrentMessage] = useState('');
@@ -30,13 +65,17 @@ export default function GameChat({ sessionId, onBackToMenu }: GameChatProps) {
     gameEnded: false,
     scenarioTitle: ''
   });
+  const [worldData, setWorldData] = useState<WorldData | null>(null);
+  const [showWorldPanel, setShowWorldPanel] = useState(false);
+  const [activeWorldTab, setActiveWorldTab] = useState<'characters' | 'objects' | 'locations' | 'rules'>('characters');
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Cargar historial al montar el componente
+  // Cargar historial y datos del mundo al montar el componente
   useEffect(() => {
     loadHistory();
+    loadWorldData();
   }, [sessionId]);
 
   // Auto-scroll al final cuando hay mensajes nuevos
@@ -87,6 +126,41 @@ export default function GameChat({ sessionId, onBackToMenu }: GameChatProps) {
     } catch (error) {
       console.error('Error cargando historial:', error);
       addSystemMessage('Error cargando el historial del juego.');
+    }
+  };
+
+  const loadWorldData = async () => {
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'get_world_data',
+          sessionId
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Error cargando datos del mundo');
+      }
+
+      const data = await response.json();
+      
+      // Asegurar que todos los arrays están definidos
+      const sanitizedData: WorldData = {
+        characters: data.characters || [],
+        objects: data.objects || [],
+        locations: data.locations || [],
+        rules: data.rules || [],
+        currentState: data.currentState || {}
+      };
+      
+      setWorldData(sanitizedData);
+
+    } catch (error) {
+      console.error('Error cargando datos del mundo:', error);
     }
   };
 
@@ -158,10 +232,18 @@ export default function GameChat({ sessionId, onBackToMenu }: GameChatProps) {
         addSystemMessage(`🌅 Ha pasado al día ${data.currentDay} de ${data.maxDays}`);
       }
 
+      // Mostrar notificaciones de cambios en el mundo
+      if (data.worldChanges && data.worldChanges.summary) {
+        addSystemMessage(`🌍 Cambios en el mundo: ${data.worldChanges.summary}`);
+      }
+
       // Mostrar mensaje de fin de juego
       if (data.gameEnded) {
         addSystemMessage('🎭 El juego ha terminado. ¡Gracias por jugar!');
       }
+
+      // Recargar datos del mundo después de cada respuesta
+      loadWorldData();
 
     } catch (error) {
       console.error('Error enviando mensaje:', error);
@@ -217,12 +299,177 @@ export default function GameChat({ sessionId, onBackToMenu }: GameChatProps) {
                 </div>
               </div>
             </div>
-            <Button variant="outline" onClick={onBackToMenu}>
-              Volver al menú
-            </Button>
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => setShowWorldPanel(!showWorldPanel)}
+                className="flex items-center gap-2"
+              >
+                <Scroll className="w-4 h-4" />
+                {showWorldPanel ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                Mundo
+              </Button>
+              <Button variant="outline" onClick={onBackToMenu}>
+                Volver al menú
+              </Button>
+            </div>
           </div>
         </CardHeader>
       </Card>
+
+      {/* World Panel */}
+      {showWorldPanel && worldData && (
+        <Card className="mx-4 mb-2">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Estado del Mundo</CardTitle>
+            <div className="flex gap-2">
+              <Button
+                variant={activeWorldTab === 'characters' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setActiveWorldTab('characters')}
+                className="flex items-center gap-1"
+              >
+                <Users className="w-4 h-4" />
+                Personajes ({worldData.characters?.length || 0})
+              </Button>
+              <Button
+                variant={activeWorldTab === 'objects' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setActiveWorldTab('objects')}
+                className="flex items-center gap-1"
+              >
+                <Package className="w-4 h-4" />
+                Objetos ({worldData.objects?.length || 0})
+              </Button>
+              <Button
+                variant={activeWorldTab === 'locations' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setActiveWorldTab('locations')}
+                className="flex items-center gap-1"
+              >
+                <MapPin className="w-4 h-4" />
+                Ubicaciones ({worldData.locations?.length || 0})
+              </Button>
+              <Button
+                variant={activeWorldTab === 'rules' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setActiveWorldTab('rules')}
+                className="flex items-center gap-1"
+              >
+                <Target className="w-4 h-4" />
+                Reglas ({worldData.rules?.filter(r => r.isActive).length || 0})
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="max-h-60 overflow-y-auto">
+            {activeWorldTab === 'characters' && (
+              <div className="grid gap-3 md:grid-cols-2">
+                {(worldData.characters || []).map((character) => (
+                  <div key={character.id} className="border rounded-lg p-3 bg-blue-50">
+                    <div className="flex items-start gap-2">
+                      <span className="text-lg">👤</span>
+                      <div className="flex-1">
+                        <h4 className="font-medium text-sm">{character.name}</h4>
+                        <p className="text-xs text-gray-600 mb-2">{character.description}</p>
+                        {character.traits && character.traits.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mb-1">
+                            {character.traits.slice(0, 3).map((trait, index) => (
+                              <span key={index} className="bg-blue-200 text-blue-800 text-xs px-2 py-1 rounded">
+                                {trait}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <div className="text-xs text-gray-500">
+                          Estado: {character.status}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {(worldData.characters || []).length === 0 && (
+                  <p className="text-gray-500 text-sm">No hay personajes definidos aún.</p>
+                )}
+              </div>
+            )}
+
+            {activeWorldTab === 'objects' && (
+              <div className="grid gap-3 md:grid-cols-2">
+                {(worldData.objects || []).map((object) => (
+                  <div key={object.id} className="border rounded-lg p-3 bg-green-50">
+                    <div className="flex items-start gap-2">
+                      <span className="text-lg">📦</span>
+                      <div className="flex-1">
+                        <h4 className="font-medium text-sm">{object.name}</h4>
+                        <p className="text-xs text-gray-600 mb-2">{object.description}</p>
+                        {object.location && (
+                          <div className="text-xs text-gray-500 mb-1">
+                            📍 {object.location}
+                          </div>
+                        )}
+                        {object.owner && (
+                          <div className="text-xs text-gray-500">
+                            👤 Propietario: {object.owner}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {(worldData.objects || []).length === 0 && (
+                  <p className="text-gray-500 text-sm">No hay objetos definidos aún.</p>
+                )}
+              </div>
+            )}
+
+            {activeWorldTab === 'locations' && (
+              <div className="grid gap-3 md:grid-cols-2">
+                {(worldData.locations || []).map((location) => (
+                  <div key={location.id} className="border rounded-lg p-3 bg-yellow-50">
+                    <div className="flex items-start gap-2">
+                      <span className="text-lg">🏢</span>
+                      <div className="flex-1">
+                        <h4 className="font-medium text-sm">{location.name}</h4>
+                        <p className="text-xs text-gray-600 mb-2">{location.description}</p>
+                        {location.connections && location.connections.length > 0 && (
+                          <div className="text-xs text-gray-500">
+                            🔗 Conecta con: {location.connections.join(', ')}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {(worldData.locations || []).length === 0 && (
+                  <p className="text-gray-500 text-sm">No hay ubicaciones definidas aún.</p>
+                )}
+              </div>
+            )}
+
+            {activeWorldTab === 'rules' && (
+              <div className="space-y-2">
+                {(worldData.rules || []).filter(rule => rule.isActive).map((rule) => (
+                  <div key={rule.id} className="border rounded-lg p-3 bg-purple-50">
+                    <div className="flex items-start gap-2">
+                      <span className="text-lg">⚖️</span>
+                      <div className="flex-1">
+                        <p className="text-xs text-gray-700">{rule.description}</p>
+                        <div className="text-xs text-gray-500 mt-1">
+                          Tipo: {rule.type}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {(worldData.rules || []).filter(rule => rule.isActive).length === 0 && (
+                  <p className="text-gray-500 text-sm">No hay reglas activas definidas aún.</p>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Chat Messages */}
       <Card className="flex-1 mx-4 mb-2">
