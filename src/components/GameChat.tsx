@@ -5,8 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Send, Calendar, Target, Loader2, ChevronDown, ChevronUp, Users, Package, MapPin, Scroll } from 'lucide-react';
-import { ChatMessage } from '@/types/game';
+import { Send, Calendar, Target, Loader2, Users, Package, MapPin, DollarSign, TrendingUp, TrendingDown, PanelRight, X } from 'lucide-react';
+import { ChatMessage, FinancialSummary } from '@/types/game';
 
 interface GameChatProps {
   sessionId: string;
@@ -18,6 +18,8 @@ interface GameState {
   maxDays: number;
   gameEnded: boolean;
   scenarioTitle: string;
+  currentTime?: string;
+  totalMinutesElapsed?: number;
 }
 
 interface WorldData {
@@ -63,11 +65,15 @@ export default function GameChat({ sessionId, onBackToMenu }: GameChatProps) {
     currentDay: 1,
     maxDays: 10,
     gameEnded: false,
-    scenarioTitle: ''
+    scenarioTitle: '',
+    currentTime: '08:00',
+    totalMinutesElapsed: 0
   });
   const [worldData, setWorldData] = useState<WorldData | null>(null);
-  const [showWorldPanel, setShowWorldPanel] = useState(false);
-  const [activeWorldTab, setActiveWorldTab] = useState<'characters' | 'objects' | 'locations' | 'rules'>('characters');
+  const [showSidePanel, setShowSidePanel] = useState(false);
+  const [activeSideTab, setActiveSideTab] = useState<'finances' | 'characters' | 'objects' | 'locations' | 'rules'>('objects');
+  const [financialData, setFinancialData] = useState<FinancialSummary | null>(null);
+  const [isMillionaireScenario, setIsMillionaireScenario] = useState(false);
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -76,6 +82,7 @@ export default function GameChat({ sessionId, onBackToMenu }: GameChatProps) {
   useEffect(() => {
     loadHistory();
     loadWorldData();
+    loadFinancialData();
   }, [sessionId]);
 
   // Auto-scroll al final cuando hay mensajes nuevos
@@ -112,7 +119,8 @@ export default function GameChat({ sessionId, onBackToMenu }: GameChatProps) {
         type: entry.type,
         content: entry.content,
         timestamp: new Date(entry.timestamp),
-        day: entry.day
+        day: entry.day,
+        metadata: entry.metadata
       }));
 
       setMessages(chatMessages);
@@ -120,8 +128,15 @@ export default function GameChat({ sessionId, onBackToMenu }: GameChatProps) {
         currentDay: data.session.currentDay,
         maxDays: data.scenario.maxDays,
         gameEnded: data.session.isCompleted,
-        scenarioTitle: data.scenario.title
+        scenarioTitle: data.scenario.title,
+        currentTime: data.session.currentHour && data.session.currentMinute 
+          ? `${String(data.session.currentHour).padStart(2, '0')}:${String(data.session.currentMinute).padStart(2, '0')}`
+          : '08:00',
+        totalMinutesElapsed: data.session.totalMinutesElapsed || 0
       });
+
+      // Detectar si es el escenario millonario
+      setIsMillionaireScenario(data.scenario.id === 'millionaire-challenge');
 
     } catch (error) {
       console.error('Error cargando historial:', error);
@@ -161,6 +176,31 @@ export default function GameChat({ sessionId, onBackToMenu }: GameChatProps) {
 
     } catch (error) {
       console.error('Error cargando datos del mundo:', error);
+    }
+  };
+
+  const loadFinancialData = async () => {
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'get_financial_data',
+          sessionId
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Error cargando datos financieros');
+      }
+
+      const data = await response.json();
+      setFinancialData(data);
+
+    } catch (error) {
+      console.error('Error cargando datos financieros:', error);
     }
   };
 
@@ -224,8 +264,24 @@ export default function GameChat({ sessionId, onBackToMenu }: GameChatProps) {
         currentDay: data.currentDay,
         maxDays: data.maxDays,
         gameEnded: data.gameEnded,
-        scenarioTitle: gameState.scenarioTitle
+        scenarioTitle: gameState.scenarioTitle,
+        currentTime: data.timeInfo?.timeString || gameState.currentTime,
+        totalMinutesElapsed: data.timeInfo?.totalMinutesElapsed || gameState.totalMinutesElapsed
       });
+
+      // Mostrar mensaje de tiempo transcurrido si corresponde
+      if (data.minutesElapsed && data.minutesElapsed > 0) {
+        const hours = Math.floor(data.minutesElapsed / 60);
+        const minutes = data.minutesElapsed % 60;
+        let timeMessage = '⏰ ';
+        if (hours > 0) {
+          timeMessage += `${hours}h ${minutes}m han pasado`;
+        } else {
+          timeMessage += `${minutes} minutos han pasado`;
+        }
+        timeMessage += ` - Hora actual: ${data.timeInfo?.timeString || gameState.currentTime}`;
+        addSystemMessage(timeMessage);
+      }
 
       // Mostrar mensaje de avance de día si corresponde
       if (data.shouldAdvanceDay) {
@@ -242,8 +298,11 @@ export default function GameChat({ sessionId, onBackToMenu }: GameChatProps) {
         addSystemMessage('🎭 El juego ha terminado. ¡Gracias por jugar!');
       }
 
-      // Recargar datos del mundo después de cada respuesta
+      // Recargar datos del mundo y financieros después de cada respuesta
       loadWorldData();
+      if (isMillionaireScenario) {
+        loadFinancialData();
+      }
 
     } catch (error) {
       console.error('Error enviando mensaje:', error);
@@ -260,7 +319,11 @@ export default function GameChat({ sessionId, onBackToMenu }: GameChatProps) {
     }
   };
 
-  const getMessageIcon = (type: string) => {
+  const getMessageIcon = (type: string, metadata?: any) => {
+    if (type === 'world_change' && metadata?.icon) {
+      return metadata.icon;
+    }
+    
     switch (type) {
       case 'user':
         return '👤';
@@ -268,6 +331,8 @@ export default function GameChat({ sessionId, onBackToMenu }: GameChatProps) {
         return '🎭';
       case 'system':
         return '⚙️';
+      case 'world_change':
+        return '🌍';
       default:
         return '💭';
     }
@@ -280,10 +345,64 @@ export default function GameChat({ sessionId, onBackToMenu }: GameChatProps) {
     }).format(timestamp);
   };
 
+  const getMessageStyles = (type: string, metadata?: any) => {
+    if (type === 'world_change') {
+      const color = metadata?.color || 'gray';
+      const colorMap: Record<string, string> = {
+        blue: 'bg-blue-50 border-blue-200 border-l-4 border-l-blue-500',
+        green: 'bg-green-50 border-green-200 border-l-4 border-l-green-500',
+        amber: 'bg-amber-50 border-amber-200 border-l-4 border-l-amber-500',
+        purple: 'bg-purple-50 border-purple-200 border-l-4 border-l-purple-500',
+        orange: 'bg-orange-50 border-orange-200 border-l-4 border-l-orange-500',
+        teal: 'bg-teal-50 border-teal-200 border-l-4 border-l-teal-500',
+        gray: 'bg-gray-50 border-gray-200 border-l-4 border-l-gray-500'
+      };
+      return colorMap[color] || colorMap.gray;
+    }
+    
+    switch (type) {
+      case 'user':
+        return 'bg-blue-100 border-blue-200';
+      case 'ai':
+        return 'bg-gray-100 border-gray-200';
+      case 'system':
+        return 'bg-orange-50 border-orange-300 border-l-4 border-l-orange-500';
+      default:
+        return 'bg-gray-100 border-gray-200';
+    }
+  };
+
+  const getMessageTitle = (type: string, metadata?: any) => {
+    if (type === 'world_change') {
+      const typeMap: Record<string, string> = {
+        character_new: 'Nuevo Personaje',
+        character_updated: 'Personaje Actualizado',
+        object_new: 'Nuevo Objeto',
+        object_updated: 'Objeto Modificado',
+        location_new: 'Nueva Ubicación',
+        location_updated: 'Ubicación Alterada'
+      };
+      return typeMap[metadata?.type] || 'Cambio del Mundo';
+    }
+    
+    switch (type) {
+      case 'user':
+        return 'Tú';
+      case 'ai':
+        return 'Narrador';
+      case 'system':
+        return 'Sistema';
+      default:
+        return 'Mensaje';
+    }
+  };
+
   return (
-    <div className="flex flex-col h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
-      {/* Header */}
-      <Card className="m-4 mb-2">
+    <div className="flex h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 relative">
+      {/* Contenido Principal */}
+      <div className={`flex flex-col transition-all duration-300 ${showSidePanel ? 'mr-80' : ''} flex-1`}>
+        {/* Header */}
+        <Card className="m-4 mb-2">
         <CardHeader className="pb-3">
           <div className="flex justify-between items-center">
             <div>
@@ -294,21 +413,32 @@ export default function GameChat({ sessionId, onBackToMenu }: GameChatProps) {
                   <span>Día {gameState.currentDay} de {gameState.maxDays}</span>
                 </div>
                 <div className="flex items-center gap-1">
+                  ⏰
+                  <span>{gameState.currentTime}</span>
+                </div>
+                <div className="flex items-center gap-1">
                   <Target className="w-4 h-4" />
                   <span>{gameState.gameEnded ? 'Completado' : 'En progreso'}</span>
                 </div>
+                {gameState.totalMinutesElapsed && gameState.totalMinutesElapsed > 0 && (
+                  <div className="flex items-center gap-1">
+                    ⏱️
+                    <span>
+                      {Math.floor(gameState.totalMinutesElapsed / 60)}h {gameState.totalMinutesElapsed % 60}m transcurridos
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
             <div className="flex gap-2">
               <Button 
                 variant="outline" 
                 size="sm"
-                onClick={() => setShowWorldPanel(!showWorldPanel)}
+                onClick={() => setShowSidePanel(!showSidePanel)}
                 className="flex items-center gap-2"
               >
-                <Scroll className="w-4 h-4" />
-                {showWorldPanel ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                Mundo
+                <PanelRight className="w-4 h-4" />
+                Info del Juego
               </Button>
               <Button variant="outline" onClick={onBackToMenu}>
                 Volver al menú
@@ -318,158 +448,6 @@ export default function GameChat({ sessionId, onBackToMenu }: GameChatProps) {
         </CardHeader>
       </Card>
 
-      {/* World Panel */}
-      {showWorldPanel && worldData && (
-        <Card className="mx-4 mb-2">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg">Estado del Mundo</CardTitle>
-            <div className="flex gap-2">
-              <Button
-                variant={activeWorldTab === 'characters' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setActiveWorldTab('characters')}
-                className="flex items-center gap-1"
-              >
-                <Users className="w-4 h-4" />
-                Personajes ({worldData.characters?.length || 0})
-              </Button>
-              <Button
-                variant={activeWorldTab === 'objects' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setActiveWorldTab('objects')}
-                className="flex items-center gap-1"
-              >
-                <Package className="w-4 h-4" />
-                Objetos ({worldData.objects?.length || 0})
-              </Button>
-              <Button
-                variant={activeWorldTab === 'locations' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setActiveWorldTab('locations')}
-                className="flex items-center gap-1"
-              >
-                <MapPin className="w-4 h-4" />
-                Ubicaciones ({worldData.locations?.length || 0})
-              </Button>
-              <Button
-                variant={activeWorldTab === 'rules' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setActiveWorldTab('rules')}
-                className="flex items-center gap-1"
-              >
-                <Target className="w-4 h-4" />
-                Reglas ({worldData.rules?.filter(r => r.isActive).length || 0})
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="max-h-60 overflow-y-auto">
-            {activeWorldTab === 'characters' && (
-              <div className="grid gap-3 md:grid-cols-2">
-                {(worldData.characters || []).map((character) => (
-                  <div key={character.id} className="border rounded-lg p-3 bg-blue-50">
-                    <div className="flex items-start gap-2">
-                      <span className="text-lg">👤</span>
-                      <div className="flex-1">
-                        <h4 className="font-medium text-sm">{character.name}</h4>
-                        <p className="text-xs text-gray-600 mb-2">{character.description}</p>
-                        {character.traits && character.traits.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mb-1">
-                            {character.traits.slice(0, 3).map((trait, index) => (
-                              <span key={index} className="bg-blue-200 text-blue-800 text-xs px-2 py-1 rounded">
-                                {trait}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                        <div className="text-xs text-gray-500">
-                          Estado: {character.status}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {(worldData.characters || []).length === 0 && (
-                  <p className="text-gray-500 text-sm">No hay personajes definidos aún.</p>
-                )}
-              </div>
-            )}
-
-            {activeWorldTab === 'objects' && (
-              <div className="grid gap-3 md:grid-cols-2">
-                {(worldData.objects || []).map((object) => (
-                  <div key={object.id} className="border rounded-lg p-3 bg-green-50">
-                    <div className="flex items-start gap-2">
-                      <span className="text-lg">📦</span>
-                      <div className="flex-1">
-                        <h4 className="font-medium text-sm">{object.name}</h4>
-                        <p className="text-xs text-gray-600 mb-2">{object.description}</p>
-                        {object.location && (
-                          <div className="text-xs text-gray-500 mb-1">
-                            📍 {object.location}
-                          </div>
-                        )}
-                        {object.owner && (
-                          <div className="text-xs text-gray-500">
-                            👤 Propietario: {object.owner}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {(worldData.objects || []).length === 0 && (
-                  <p className="text-gray-500 text-sm">No hay objetos definidos aún.</p>
-                )}
-              </div>
-            )}
-
-            {activeWorldTab === 'locations' && (
-              <div className="grid gap-3 md:grid-cols-2">
-                {(worldData.locations || []).map((location) => (
-                  <div key={location.id} className="border rounded-lg p-3 bg-yellow-50">
-                    <div className="flex items-start gap-2">
-                      <span className="text-lg">🏢</span>
-                      <div className="flex-1">
-                        <h4 className="font-medium text-sm">{location.name}</h4>
-                        <p className="text-xs text-gray-600 mb-2">{location.description}</p>
-                        {location.connections && location.connections.length > 0 && (
-                          <div className="text-xs text-gray-500">
-                            🔗 Conecta con: {location.connections.join(', ')}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {(worldData.locations || []).length === 0 && (
-                  <p className="text-gray-500 text-sm">No hay ubicaciones definidas aún.</p>
-                )}
-              </div>
-            )}
-
-            {activeWorldTab === 'rules' && (
-              <div className="space-y-2">
-                {(worldData.rules || []).filter(rule => rule.isActive).map((rule) => (
-                  <div key={rule.id} className="border rounded-lg p-3 bg-purple-50">
-                    <div className="flex items-start gap-2">
-                      <span className="text-lg">⚖️</span>
-                      <div className="flex-1">
-                        <p className="text-xs text-gray-700">{rule.description}</p>
-                        <div className="text-xs text-gray-500 mt-1">
-                          Tipo: {rule.type}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {(worldData.rules || []).filter(rule => rule.isActive).length === 0 && (
-                  <p className="text-gray-500 text-sm">No hay reglas activas definidas aún.</p>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
 
       {/* Chat Messages */}
       <Card className="flex-1 mx-4 mb-2">
@@ -478,26 +456,40 @@ export default function GameChat({ sessionId, onBackToMenu }: GameChatProps) {
             <div className="space-y-4">
               {messages.map((message) => (
                 <div key={message.id} className="flex gap-3">
-                  <div className="text-2xl">{getMessageIcon(message.type)}</div>
+                  <div className="text-2xl">{getMessageIcon(message.type, message.metadata)}</div>
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="font-medium text-sm">
-                        {message.type === 'user' ? 'Tú' : 
-                         message.type === 'ai' ? 'Narrador' : 'Sistema'}
+                        {getMessageTitle(message.type, message.metadata)}
                       </span>
+                      {message.metadata?.elementName && (
+                        <span className="text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded">
+                          {message.metadata.elementName}
+                        </span>
+                      )}
                       <span className="text-xs text-muted-foreground">
                         {formatMessageTime(message.timestamp)}
                         {message.day && ` • Día ${message.day}`}
                       </span>
                     </div>
-                    <div className={`rounded-lg p-3 ${
-                      message.type === 'user' 
-                        ? 'bg-blue-100 border-blue-200' 
-                        : message.type === 'ai'
-                        ? 'bg-gray-100 border-gray-200'
-                        : 'bg-yellow-50 border-yellow-200'
-                    } border`}>
-                      <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                    <div className={`rounded-lg p-3 border ${getMessageStyles(message.type, message.metadata)}`}>
+                      {message.type === 'world_change' ? (
+                        <div className="prose prose-sm max-w-none">
+                          {message.content.split('\n').map((line, index) => {
+                            if (line.startsWith('**') && line.endsWith('**')) {
+                              return <h4 key={index} className="font-semibold text-sm mt-2 mb-1">{line.slice(2, -2)}</h4>;
+                            } else if (line.startsWith('*') && line.endsWith('*')) {
+                              return <p key={index} className="text-xs italic text-gray-600 mt-2">{line.slice(1, -1)}</p>;
+                            } else if (line.trim() === '') {
+                              return <div key={index} className="h-1"></div>;
+                            } else {
+                              return <p key={index} className="text-sm">{line}</p>;
+                            }
+                          })}
+                        </div>
+                      ) : (
+                        <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -558,6 +550,308 @@ export default function GameChat({ sessionId, onBackToMenu }: GameChatProps) {
           )}
         </CardContent>
       </Card>
+      </div>
+
+      {/* Panel Lateral */}
+      {showSidePanel && (
+        <div className="fixed right-0 top-0 h-full w-80 bg-white border-l border-gray-200 shadow-lg z-50 flex flex-col">
+          {/* Header del Panel */}
+          <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+            <h3 className="font-semibold text-lg">Info del Juego</h3>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowSidePanel(false)}
+            >
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+
+          {/* Tabs del Panel */}
+          <div className="grid grid-cols-2 border-b border-gray-200 text-xs">
+            <Button
+              variant={activeSideTab === 'characters' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveSideTab('characters')}
+              className="rounded-none"
+            >
+              <Users className="w-3 h-3 mr-1" />
+              Personajes
+            </Button>
+            <Button
+              variant={activeSideTab === 'objects' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveSideTab('objects')}
+              className="rounded-none"
+            >
+              <Package className="w-3 h-3 mr-1" />
+              Objetos
+            </Button>
+            <Button
+              variant={activeSideTab === 'locations' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveSideTab('locations')}
+              className="rounded-none"
+            >
+              <MapPin className="w-3 h-3 mr-1" />
+              Ubicaciones
+            </Button>
+            <Button
+              variant={activeSideTab === 'rules' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveSideTab('rules')}
+              className="rounded-none"
+            >
+              <Target className="w-3 h-3 mr-1" />
+              Reglas
+            </Button>
+            {isMillionaireScenario && (
+              <Button
+                variant={activeSideTab === 'finances' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setActiveSideTab('finances')}
+                className="rounded-none col-span-2"
+              >
+                <DollarSign className="w-3 h-3 mr-1" />
+                Finanzas
+              </Button>
+            )}
+          </div>
+
+          {/* Contenido del Panel */}
+          <ScrollArea className="flex-1 p-4">
+
+            {activeSideTab === 'characters' && (
+              <div className="space-y-3">
+                <h4 className="font-semibold text-sm text-gray-700">Personajes del Mundo</h4>
+                {worldData?.characters?.length === 0 || !worldData?.characters ? (
+                  <p className="text-gray-500 text-sm">No hay personajes definidos aún.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {worldData.characters.map((character) => (
+                      <div key={character.id} className="border rounded-lg p-3 bg-blue-50">
+                        <div className="flex items-start gap-2">
+                          <span className="text-lg">👤</span>
+                          <div className="flex-1">
+                            <h5 className="font-medium text-sm">{character.name}</h5>
+                            <p className="text-xs text-gray-600 mb-2">{character.description}</p>
+                            {character.traits && character.traits.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mb-1">
+                                {character.traits.slice(0, 3).map((trait, index) => (
+                                  <span key={index} className="bg-blue-200 text-blue-800 text-xs px-2 py-1 rounded">
+                                    {trait}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            <div className="text-xs text-gray-500">
+                              Estado: {character.status}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeSideTab === 'objects' && (
+              <div className="space-y-4">
+                {/* Tu Inventario */}
+                <div>
+                  <h4 className="font-semibold text-sm text-gray-700 mb-2">🎒 Tu Inventario</h4>
+                  {worldData?.objects?.filter(obj => obj.owner === 'jugador' || obj.location === 'inventario').length === 0 ? (
+                    <p className="text-gray-500 text-sm">No tienes objetos en tu inventario</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {worldData?.objects?.filter(obj => obj.owner === 'jugador' || obj.location === 'inventario').map((object) => (
+                        <div key={object.id} className="border rounded-lg p-3 bg-blue-50 border-blue-200">
+                          <div className="flex items-start gap-2">
+                            <span className="text-lg">🎒</span>
+                            <div className="flex-1">
+                              <h5 className="font-medium text-sm">{object.name}</h5>
+                              <p className="text-xs text-gray-600 mb-1">{object.description}</p>
+                              {object.properties?.status && (
+                                <div className="text-xs text-gray-500">
+                                  Estado: {object.properties.status}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Otros Objetos del Mundo */}
+                <div>
+                  <h4 className="font-semibold text-sm text-gray-700 mb-2">🌍 Objetos del Mundo</h4>
+                  {worldData?.objects?.filter(obj => obj.owner !== 'jugador' && obj.location !== 'inventario').length === 0 ? (
+                    <p className="text-gray-500 text-sm">No hay otros objetos en el mundo.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {worldData?.objects?.filter(obj => obj.owner !== 'jugador' && obj.location !== 'inventario').map((object) => (
+                        <div key={object.id} className="border rounded-lg p-3 bg-green-50">
+                          <div className="flex items-start gap-2">
+                            <span className="text-lg">📦</span>
+                            <div className="flex-1">
+                              <h5 className="font-medium text-sm">{object.name}</h5>
+                              <p className="text-xs text-gray-600 mb-2">{object.description}</p>
+                              {object.location && (
+                                <div className="text-xs text-gray-500 mb-1">
+                                  📍 {object.location}
+                                </div>
+                              )}
+                              {object.owner && (
+                                <div className="text-xs text-gray-500">
+                                  👤 Propietario: {object.owner}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeSideTab === 'locations' && (
+              <div className="space-y-3">
+                <h4 className="font-semibold text-sm text-gray-700">Ubicaciones del Mundo</h4>
+                {worldData?.locations?.length === 0 || !worldData?.locations ? (
+                  <p className="text-gray-500 text-sm">No hay ubicaciones definidas aún.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {worldData.locations.map((location) => (
+                      <div key={location.id} className="border rounded-lg p-3 bg-yellow-50">
+                        <div className="flex items-start gap-2">
+                          <span className="text-lg">🏢</span>
+                          <div className="flex-1">
+                            <h5 className="font-medium text-sm">{location.name}</h5>
+                            <p className="text-xs text-gray-600 mb-2">{location.description}</p>
+                            {location.connections && location.connections.length > 0 && (
+                              <div className="text-xs text-gray-500">
+                                🔗 Conecta con: {location.connections.join(', ')}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeSideTab === 'rules' && (
+              <div className="space-y-3">
+                <h4 className="font-semibold text-sm text-gray-700">Reglas del Mundo</h4>
+                {worldData?.rules?.filter(rule => rule.isActive).length === 0 || !worldData?.rules ? (
+                  <p className="text-gray-500 text-sm">No hay reglas activas definidas aún.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {worldData.rules.filter(rule => rule.isActive).map((rule) => (
+                      <div key={rule.id} className="border rounded-lg p-3 bg-purple-50">
+                        <div className="flex items-start gap-2">
+                          <span className="text-lg">⚖️</span>
+                          <div className="flex-1">
+                            <p className="text-xs text-gray-700">{rule.description}</p>
+                            <div className="text-xs text-gray-500 mt-1">
+                              Tipo: {rule.type}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeSideTab === 'finances' && isMillionaireScenario && (
+              <div className="space-y-4">
+                {/* Resumen Financiero */}
+                <div className="bg-gradient-to-br from-green-50 to-blue-50 rounded-lg p-4 border">
+                  <h4 className="font-semibold text-sm text-gray-700 mb-3">💰 Resumen Financiero</h4>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Dinero Actual:</span>
+                      <span className="font-bold text-lg text-green-600">
+                        ${financialData?.currentBalance?.toLocaleString() || '1'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Ingresos Totales:</span>
+                      <span className="text-sm text-green-600 flex items-center">
+                        <TrendingUp className="w-3 h-3 mr-1" />
+                        ${financialData?.totalIncome?.toLocaleString() || '0'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Gastos Totales:</span>
+                      <span className="text-sm text-red-600 flex items-center">
+                        <TrendingDown className="w-3 h-3 mr-1" />
+                        ${financialData?.totalExpenses?.toLocaleString() || '0'}
+                      </span>
+                    </div>
+                    <div className="border-t pt-2 flex justify-between items-center">
+                      <span className="text-sm font-medium text-gray-700">Ganancia Neta:</span>
+                      <span className={`text-sm font-bold ${(financialData?.netChange || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        ${financialData?.netChange?.toLocaleString() || '0'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Historial de Transacciones */}
+                <div>
+                  <h4 className="font-semibold text-sm text-gray-700 mb-3">📊 Historial de Transacciones</h4>
+                  {financialData?.transactions?.length === 0 || !financialData?.transactions ? (
+                    <p className="text-gray-500 text-sm">No hay transacciones registradas</p>
+                  ) : (
+                    <div className="space-y-2 max-h-60 overflow-y-auto">
+                      {financialData.transactions.slice().reverse().map((transaction) => (
+                        <div key={transaction.id} className={`border rounded-lg p-3 ${transaction.type === 'income' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-1 mb-1">
+                                {transaction.type === 'income' ? 
+                                  <TrendingUp className="w-3 h-3 text-green-600" /> : 
+                                  <TrendingDown className="w-3 h-3 text-red-600" />
+                                }
+                                <span className={`text-xs font-medium ${transaction.type === 'income' ? 'text-green-700' : 'text-red-700'}`}>
+                                  {transaction.type === 'income' ? 'Ingreso' : 'Gasto'}
+                                </span>
+                                <span className="text-xs text-gray-500">• Día {transaction.day}</span>
+                              </div>
+                              <p className="text-xs text-gray-700 mb-1">{transaction.description}</p>
+                              <div className="text-xs text-gray-500">
+                                Categoría: {transaction.category}
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className={`text-sm font-bold ${transaction.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
+                                {transaction.type === 'income' ? '+' : '-'}${transaction.amount.toLocaleString()}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                Balance: ${transaction.balanceAfter.toLocaleString()}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </ScrollArea>
+        </div>
+      )}
     </div>
   );
 }

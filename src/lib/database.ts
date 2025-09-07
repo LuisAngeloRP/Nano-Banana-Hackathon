@@ -1,7 +1,7 @@
 import sqlite3 from 'sqlite3';
 import { promisify } from 'util';
 import path from 'path';
-import { GameScenario, GameSession, StoryEntry, GameWorld, Character, GameObject, Location, WorldRule } from '@/types/game';
+import { GameScenario, GameSession, StoryEntry, GameWorld, Character, GameObject, Location, WorldRule, FinancialTransaction, FinancialSummary } from '@/types/game';
 
 class Database {
   private db: sqlite3.Database;
@@ -43,6 +43,10 @@ class Database {
         id TEXT PRIMARY KEY,
         scenario_id TEXT NOT NULL,
         current_day INTEGER DEFAULT 1,
+        current_hour INTEGER DEFAULT 8,
+        current_minute INTEGER DEFAULT 0,
+        total_minutes_elapsed INTEGER DEFAULT 0,
+        in_game_start_time TEXT DEFAULT '08:00',
         is_completed BOOLEAN DEFAULT false,
         started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         completed_at DATETIME,
@@ -56,8 +60,57 @@ class Database {
         id TEXT PRIMARY KEY,
         session_id TEXT NOT NULL,
         day INTEGER NOT NULL,
-        type TEXT CHECK(type IN ('system', 'user', 'ai')) NOT NULL,
+        type TEXT CHECK(type IN ('system', 'user', 'ai', 'world_change')) NOT NULL,
         content TEXT NOT NULL,
+        metadata TEXT, -- JSON string para metadata adicional
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (session_id) REFERENCES game_sessions (id)
+      )
+    `);
+
+    // Migración: Agregar columna metadata si no existe
+    try {
+      await run(`ALTER TABLE story_entries ADD COLUMN metadata TEXT`);
+    } catch (error) {
+      // La columna ya existe, ignorar el error
+    }
+
+    // Migraciones: Agregar nuevas columnas de tiempo si no existen
+    try {
+      await run(`ALTER TABLE game_sessions ADD COLUMN current_hour INTEGER DEFAULT 8`);
+    } catch (error) {
+      // La columna ya existe, ignorar el error
+    }
+    
+    try {
+      await run(`ALTER TABLE game_sessions ADD COLUMN current_minute INTEGER DEFAULT 0`);
+    } catch (error) {
+      // La columna ya existe, ignorar el error
+    }
+    
+    try {
+      await run(`ALTER TABLE game_sessions ADD COLUMN total_minutes_elapsed INTEGER DEFAULT 0`);
+    } catch (error) {
+      // La columna ya existe, ignorar el error
+    }
+    
+    try {
+      await run(`ALTER TABLE game_sessions ADD COLUMN in_game_start_time TEXT DEFAULT '08:00'`);
+    } catch (error) {
+      // La columna ya existe, ignorar el error
+    }
+
+    // Tabla de transacciones financieras
+    await run(`
+      CREATE TABLE IF NOT EXISTS financial_transactions (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        type TEXT CHECK(type IN ('income', 'expense')) NOT NULL,
+        amount REAL NOT NULL,
+        description TEXT NOT NULL,
+        category TEXT NOT NULL,
+        day INTEGER NOT NULL,
+        balance_after REAL NOT NULL,
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (session_id) REFERENCES game_sessions (id)
       )
@@ -358,8 +411,8 @@ Responde siempre en español y mantén la tensión.`,
     const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
     await run(`
-      INSERT INTO game_sessions (id, scenario_id, current_day, is_completed)
-      VALUES (?, ?, 1, false)
+      INSERT INTO game_sessions (id, scenario_id, current_day, current_hour, current_minute, total_minutes_elapsed, in_game_start_time, is_completed)
+      VALUES (?, ?, 1, 8, 0, 0, '08:00', false)
     `, [sessionId, scenarioId]);
 
     // Crear mundo inicial
@@ -391,21 +444,27 @@ Responde siempre en español y mantén la tensión.`,
       id: row.id,
       scenarioId: row.scenario_id,
       currentDay: row.current_day,
+      currentHour: row.current_hour || 8,
+      currentMinute: row.current_minute || 0,
+      totalMinutesElapsed: row.total_minutes_elapsed || 0,
+      inGameStartTime: row.in_game_start_time || '08:00',
       isCompleted: Boolean(row.is_completed),
       startedAt: new Date(row.started_at),
       completedAt: row.completed_at ? new Date(row.completed_at) : undefined
     };
   }
 
-  async addStoryEntry(sessionId: string, day: number, type: 'system' | 'user' | 'ai', content: string): Promise<string> {
+  async addStoryEntry(sessionId: string, day: number, type: 'system' | 'user' | 'ai' | 'world_change', content: string, metadata?: Record<string, any>): Promise<string> {
     await this.ensureInitialized();
     const run = promisify(this.db.run.bind(this.db)) as (sql: string, params?: any[]) => Promise<any>;
     const entryId = `entry_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
+    const metadataJson = metadata ? JSON.stringify(metadata) : null;
+    
     await run(`
-      INSERT INTO story_entries (id, session_id, day, type, content)
-      VALUES (?, ?, ?, ?, ?)
-    `, [entryId, sessionId, day, type, content]);
+      INSERT INTO story_entries (id, session_id, day, type, content, metadata)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [entryId, sessionId, day, type, content, metadataJson]);
 
     return entryId;
   }
@@ -425,7 +484,8 @@ Responde siempre en español y mantén la tensión.`,
       day: row.day,
       type: row.type,
       content: row.content,
-      timestamp: new Date(row.timestamp)
+      timestamp: new Date(row.timestamp),
+      metadata: row.metadata ? JSON.parse(row.metadata) : undefined
     }));
   }
 
@@ -490,6 +550,65 @@ Responde siempre en español y mantén la tensión.`,
     await this.ensureInitialized();
     const run = promisify(this.db.run.bind(this.db)) as (sql: string, params?: any[]) => Promise<any>;
     await run('UPDATE game_sessions SET current_day = ? WHERE id = ?', [day, sessionId]);
+  }
+
+  async updateGameTime(sessionId: string, minutesToAdd: number): Promise<void> {
+    await this.ensureInitialized();
+    const run = promisify(this.db.run.bind(this.db)) as (sql: string, params?: any[]) => Promise<any>;
+    const get = promisify(this.db.get.bind(this.db)) as (sql: string, params?: any[]) => Promise<any>;
+    
+    // Obtener tiempo actual
+    const session = await this.getGameSession(sessionId);
+    if (!session) return;
+    
+    const newTotalMinutes = session.totalMinutesElapsed + minutesToAdd;
+    const currentTotalMinutesInDay = (session.currentHour * 60) + session.currentMinute;
+    const newTotalMinutesInDay = currentTotalMinutesInDay + minutesToAdd;
+    
+    // Calcular el nuevo día y tiempo
+    let newDay = session.currentDay;
+    let newHour = session.currentHour;
+    let newMinute = session.currentMinute;
+    
+    // Si supera las 24 horas (1440 minutos), avanzar días
+    if (newTotalMinutesInDay >= 1440) {
+      const daysToAdd = Math.floor(newTotalMinutesInDay / 1440);
+      newDay += daysToAdd;
+      const remainingMinutes = newTotalMinutesInDay % 1440;
+      newHour = Math.floor(remainingMinutes / 60);
+      newMinute = remainingMinutes % 60;
+    } else {
+      newHour = Math.floor(newTotalMinutesInDay / 60);
+      newMinute = newTotalMinutesInDay % 60;
+    }
+    
+    await run(`
+      UPDATE game_sessions 
+      SET current_day = ?, current_hour = ?, current_minute = ?, total_minutes_elapsed = ?
+      WHERE id = ?
+    `, [newDay, newHour, newMinute, newTotalMinutes, sessionId]);
+  }
+
+  async getCurrentGameTime(sessionId: string): Promise<{
+    day: number;
+    hour: number;
+    minute: number;
+    timeString: string;
+    totalMinutesElapsed: number;
+  } | null> {
+    const session = await this.getGameSession(sessionId);
+    if (!session) return null;
+    
+    const hourStr = session.currentHour.toString().padStart(2, '0');
+    const minuteStr = session.currentMinute.toString().padStart(2, '0');
+    
+    return {
+      day: session.currentDay,
+      hour: session.currentHour,
+      minute: session.currentMinute,
+      timeString: `${hourStr}:${minuteStr}`,
+      totalMinutesElapsed: session.totalMinutesElapsed
+    };
   }
 
   async completeSession(sessionId: string): Promise<void> {
@@ -705,6 +824,10 @@ Responde siempre en español y mantén la tensión.`,
       id: row.id,
       scenarioId: row.scenario_id,
       currentDay: row.current_day,
+      currentHour: row.current_hour || 8,
+      currentMinute: row.current_minute || 0,
+      totalMinutesElapsed: row.total_minutes_elapsed || 0,
+      inGameStartTime: row.in_game_start_time || '08:00',
       isCompleted: Boolean(row.is_completed),
       startedAt: new Date(row.started_at),
       completedAt: row.completed_at ? new Date(row.completed_at) : undefined,
@@ -780,6 +903,10 @@ Responde siempre en español y mantén la tensión.`,
         id: sessionRow.id,
         scenarioId: sessionRow.scenario_id,
         currentDay: sessionRow.current_day,
+        currentHour: sessionRow.current_hour || 8,
+        currentMinute: sessionRow.current_minute || 0,
+        totalMinutesElapsed: sessionRow.total_minutes_elapsed || 0,
+        inGameStartTime: sessionRow.in_game_start_time || '08:00',
         isCompleted: Boolean(sessionRow.is_completed),
         startedAt: new Date(sessionRow.started_at),
         completedAt: sessionRow.completed_at ? new Date(sessionRow.completed_at) : undefined
@@ -806,9 +933,142 @@ Responde siempre en español y mantén la tensión.`,
     const run = promisify(this.db.run.bind(this.db)) as (sql: string, params?: any[]) => Promise<any>;
     
     // Eliminar en orden debido a las foreign keys
+    await run('DELETE FROM financial_transactions WHERE session_id = ?', [sessionId]);
     await run('DELETE FROM story_entries WHERE session_id = ?', [sessionId]);
     await run('DELETE FROM game_worlds WHERE session_id = ?', [sessionId]);
     await run('DELETE FROM game_sessions WHERE id = ?', [sessionId]);
+  }
+
+  // Funciones para transacciones financieras
+  async addFinancialTransaction(
+    sessionId: string, 
+    type: 'income' | 'expense',
+    amount: number,
+    description: string,
+    category: string,
+    day: number
+  ): Promise<string> {
+    await this.ensureInitialized();
+    const run = promisify(this.db.run.bind(this.db)) as (sql: string, params?: any[]) => Promise<any>;
+    const get = promisify(this.db.get.bind(this.db)) as (sql: string, params?: any[]) => Promise<any>;
+    
+    const transactionId = `txn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Obtener balance actual
+    const currentBalance = await this.getCurrentBalance(sessionId);
+    const balanceAfter = type === 'income' ? currentBalance + amount : currentBalance - amount;
+    
+    await run(`
+      INSERT INTO financial_transactions (id, session_id, type, amount, description, category, day, balance_after)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [transactionId, sessionId, type, amount, description, category, day, balanceAfter]);
+
+    return transactionId;
+  }
+
+  async getCurrentBalance(sessionId: string): Promise<number> {
+    await this.ensureInitialized();
+    const get = promisify(this.db.get.bind(this.db)) as (sql: string, params?: any[]) => Promise<any>;
+    
+    const result = await get(`
+      SELECT balance_after FROM financial_transactions 
+      WHERE session_id = ? 
+      ORDER BY timestamp DESC, id DESC 
+      LIMIT 1
+    `, [sessionId]);
+    
+    // Si no hay transacciones, obtener balance inicial del escenario (para millonario es $1)
+    if (!result) {
+      const session = await this.getGameSession(sessionId);
+      if (session?.scenarioId === 'millionaire-challenge') {
+        return 1; // $1 inicial para el desafío millonario
+      }
+      return 0;
+    }
+    
+    return result.balance_after || 0;
+  }
+
+  async getFinancialSummary(sessionId: string): Promise<FinancialSummary> {
+    await this.ensureInitialized();
+    const all = promisify(this.db.all.bind(this.db)) as (sql: string, params?: any[]) => Promise<any[]>;
+    const get = promisify(this.db.get.bind(this.db)) as (sql: string, params?: any[]) => Promise<any>;
+    
+    // Obtener todas las transacciones
+    const transactions = await all(`
+      SELECT * FROM financial_transactions 
+      WHERE session_id = ? 
+      ORDER BY timestamp ASC
+    `, [sessionId]);
+    
+    // Obtener totales
+    const totals = await get(`
+      SELECT 
+        SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END) as total_income,
+        SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as total_expenses
+      FROM financial_transactions 
+      WHERE session_id = ?
+    `, [sessionId]);
+    
+    const currentBalance = await this.getCurrentBalance(sessionId);
+    const totalIncome = totals?.total_income || 0;
+    const totalExpenses = totals?.total_expenses || 0;
+    
+    // Obtener balance inicial
+    const session = await this.getGameSession(sessionId);
+    const initialBalance = session?.scenarioId === 'millionaire-challenge' ? 1 : 0;
+    
+    const netChange = currentBalance - initialBalance;
+    
+    return {
+      currentBalance,
+      totalIncome,
+      totalExpenses,
+      netChange,
+      transactions: transactions.map(row => ({
+        id: row.id,
+        sessionId: row.session_id,
+        type: row.type,
+        amount: row.amount,
+        description: row.description,
+        category: row.category,
+        day: row.day,
+        balanceAfter: row.balance_after,
+        timestamp: new Date(row.timestamp)
+      }))
+    };
+  }
+
+  async getFinancialTransactionsByDay(sessionId: string, day?: number): Promise<FinancialTransaction[]> {
+    await this.ensureInitialized();
+    const all = promisify(this.db.all.bind(this.db)) as (sql: string, params?: any[]) => Promise<any[]>;
+    
+    let query = `
+      SELECT * FROM financial_transactions 
+      WHERE session_id = ?
+    `;
+    const params = [sessionId];
+    
+    if (day !== undefined) {
+      query += ` AND day = ?`;
+      params.push(day.toString());
+    }
+    
+    query += ` ORDER BY timestamp ASC`;
+    
+    const rows = await all(query, params);
+    
+    return rows.map(row => ({
+      id: row.id,
+      sessionId: row.session_id,
+      type: row.type,
+      amount: row.amount,
+      description: row.description,
+      category: row.category,
+      day: row.day,
+      balanceAfter: row.balance_after,
+      timestamp: new Date(row.timestamp)
+    }));
   }
 }
 

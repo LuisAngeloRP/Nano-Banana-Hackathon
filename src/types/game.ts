@@ -13,6 +13,10 @@ export interface GameSession {
   id: string;
   scenarioId: string;
   currentDay: number;
+  currentHour: number;
+  currentMinute: number;
+  totalMinutesElapsed: number;
+  inGameStartTime: string;
   isCompleted: boolean;
   startedAt: Date;
   completedAt?: Date;
@@ -22,9 +26,10 @@ export interface StoryEntry {
   id: string;
   sessionId: string;
   day: number;
-  type: 'system' | 'user' | 'ai';
+  type: 'system' | 'user' | 'ai' | 'world_change';
   content: string;
   timestamp: Date;
+  metadata?: Record<string, any>;
 }
 
 export interface GameWorld {
@@ -73,8 +78,29 @@ export interface WorldRule {
 
 export interface ChatMessage {
   id: string;
-  type: 'user' | 'ai' | 'system';
+  type: 'user' | 'ai' | 'system' | 'world_change';
   content: string;
   timestamp: Date;
   day?: number;
+  metadata?: Record<string, any>;
+}
+
+export interface FinancialTransaction {
+  id: string;
+  sessionId: string;
+  type: 'income' | 'expense';
+  amount: number;
+  description: string;
+  category: string;
+  timestamp: Date;
+  day: number;
+  balanceAfter: number;
+}
+
+export interface FinancialSummary {
+  currentBalance: number;
+  totalIncome: number;
+  totalExpenses: number;
+  netChange: number;
+  transactions: FinancialTransaction[];
 }

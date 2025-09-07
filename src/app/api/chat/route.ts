@@ -1,6 +1,179 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/database';
 import { getGeminiService } from '@/lib/gemini';
+import { GameWorld } from '@/types/game';
+
+// Función para generar tarjetas de cambios del mundo
+function generateWorldChangeCards(oldWorld: GameWorld, updatedWorld: Partial<GameWorld>, changes: any): Array<{content: string, metadata: any}> {
+  const changeCards: Array<{content: string, metadata: any}> = [];
+
+  // Crear tarjetas para nuevos personajes
+  if (changes.newCharacters && changes.newCharacters.length > 0) {
+    for (const char of changes.newCharacters) {
+      const cardContent = `**🎭 Nuevo Personaje Aparece**\n\n**${char.name || char.id}**\n\n${char.description || 'Un nuevo personaje ha aparecido en la historia.'}\n\n**Estado:** ${char.status || 'Desconocido'}\n**Rasgos:** ${char.traits ? char.traits.join(', ') : 'Aún por descubrir'}`;
+      
+      changeCards.push({
+        content: cardContent,
+        metadata: {
+          type: 'character_new',
+          elementType: 'character',
+          elementId: char.id,
+          elementName: char.name || char.id,
+          icon: '🎭',
+          color: 'blue'
+        }
+      });
+    }
+  }
+
+  // Crear tarjetas para personajes editados
+  if (changes.editedCharacters && changes.editedCharacters.length > 0) {
+    for (const char of changes.editedCharacters) {
+      const oldChar = oldWorld.characters.find(c => c.id === char.id);
+      const newChar = updatedWorld.characters?.find(c => c.id === char.id);
+      
+      if (oldChar && newChar) {
+        let changeDetails = [];
+        
+        if (oldChar.status !== newChar.status) {
+          changeDetails.push(`**Estado:** ${oldChar.status} → ${newChar.status}`);
+        }
+        if (oldChar.description !== newChar.description) {
+          changeDetails.push(`**Descripción:** Actualizada`);
+        }
+        
+        if (changeDetails.length > 0) {
+          const cardContent = `**⚡ Personaje Actualizado**\n\n**${oldChar.name}**\n\n${changeDetails.join('\n')}\n\n*Los eventos han marcado a este personaje de manera permanente.*`;
+          
+          changeCards.push({
+            content: cardContent,
+            metadata: {
+              type: 'character_updated',
+              elementType: 'character',
+              elementId: char.id,
+              elementName: oldChar.name,
+              icon: '⚡',
+              color: 'amber'
+            }
+          });
+        }
+      }
+    }
+  }
+
+  // Crear tarjetas para nuevos objetos
+  if (changes.newObjects && changes.newObjects.length > 0) {
+    for (const obj of changes.newObjects) {
+      const cardContent = `**📦 Nuevo Objeto Descubierto**\n\n**${obj.name || obj.id}**\n\n${obj.description || 'Un nuevo objeto ha aparecido.'}\n\n**Ubicación:** ${obj.location || 'Desconocida'}\n**Propietario:** ${obj.owner || 'Sin dueño'}`;
+      
+      changeCards.push({
+        content: cardContent,
+        metadata: {
+          type: 'object_new',
+          elementType: 'object',
+          elementId: obj.id,
+          elementName: obj.name || obj.id,
+          icon: '📦',
+          color: 'green'
+        }
+      });
+    }
+  }
+
+  // Crear tarjetas para objetos editados
+  if (changes.editedObjects && changes.editedObjects.length > 0) {
+    for (const obj of changes.editedObjects) {
+      const oldObj = oldWorld.objects.find(o => o.id === obj.id);
+      const newObj = updatedWorld.objects?.find(o => o.id === obj.id);
+      
+      if (oldObj && newObj) {
+        let changeDetails = [];
+        
+        if (oldObj.location !== newObj.location) {
+          changeDetails.push(`**Ubicación:** ${oldObj.location || 'Desconocida'} → ${newObj.location || 'Desconocida'}`);
+        }
+        if (oldObj.owner !== newObj.owner) {
+          changeDetails.push(`**Propietario:** ${oldObj.owner || 'Sin dueño'} → ${newObj.owner || 'Sin dueño'}`);
+        }
+        if (oldObj.properties?.status !== newObj.properties?.status) {
+          changeDetails.push(`**Estado:** ${oldObj.properties?.status || 'Funcional'} → ${newObj.properties?.status || 'Funcional'}`);
+        }
+        
+        if (changeDetails.length > 0) {
+          const cardContent = `**🔄 Objeto Modificado**\n\n**${oldObj.name}**\n\n${changeDetails.join('\n')}\n\n*Este objeto ha experimentado cambios debido a los eventos recientes.*`;
+          
+          changeCards.push({
+            content: cardContent,
+            metadata: {
+              type: 'object_updated',
+              elementType: 'object',
+              elementId: obj.id,
+              elementName: oldObj.name,
+              icon: '🔄',
+              color: 'purple'
+            }
+          });
+        }
+      }
+    }
+  }
+
+  // Crear tarjetas para nuevas ubicaciones
+  if (changes.newLocations && changes.newLocations.length > 0) {
+    for (const loc of changes.newLocations) {
+      const cardContent = `**🏗️ Nueva Ubicación Disponible**\n\n**${loc.name || loc.id}**\n\n${loc.description || 'Una nueva ubicación ha sido descubierta.'}\n\n**Conexiones:** ${loc.connections ? loc.connections.join(', ') : 'Ninguna conocida'}`;
+      
+      changeCards.push({
+        content: cardContent,
+        metadata: {
+          type: 'location_new',
+          elementType: 'location',
+          elementId: loc.id,
+          elementName: loc.name || loc.id,
+          icon: '🏗️',
+          color: 'orange'
+        }
+      });
+    }
+  }
+
+  // Crear tarjetas para ubicaciones editadas
+  if (changes.editedLocations && changes.editedLocations.length > 0) {
+    for (const loc of changes.editedLocations) {
+      const oldLoc = oldWorld.locations.find(l => l.id === loc.id);
+      const newLoc = updatedWorld.locations?.find(l => l.id === loc.id);
+      
+      if (oldLoc && newLoc) {
+        let changeDetails = [];
+        
+        if (JSON.stringify(oldLoc.connections) !== JSON.stringify(newLoc.connections)) {
+          changeDetails.push(`**Conexiones:** ${oldLoc.connections?.join(', ') || 'Ninguna'} → ${newLoc.connections?.join(', ') || 'Ninguna'}`);
+        }
+        if (oldLoc.description !== newLoc.description) {
+          changeDetails.push(`**Descripción:** Actualizada`);
+        }
+        
+        if (changeDetails.length > 0) {
+          const cardContent = `**🚪 Ubicación Alterada**\n\n**${oldLoc.name}**\n\n${changeDetails.join('\n')}\n\n*Los eventos han transformado este lugar de manera significativa.*`;
+          
+          changeCards.push({
+            content: cardContent,
+            metadata: {
+              type: 'location_updated',
+              elementType: 'location',
+              elementId: loc.id,
+              elementName: oldLoc.name,
+              icon: '🚪',
+              color: 'teal'
+            }
+          });
+        }
+      }
+    }
+  }
+
+  return changeCards;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -94,6 +267,17 @@ export async function POST(request: NextRequest) {
         await db.updateGameWorld(sessionId, aiResponse.updatedWorld);
       }
 
+      // Actualizar tiempo del juego si la IA especificó cuánto tiempo pasó
+      if (aiResponse.minutesToAdd && aiResponse.minutesToAdd > 0) {
+        await db.updateGameTime(sessionId, aiResponse.minutesToAdd);
+      }
+
+      // Obtener sesión actualizada después de actualizar el tiempo
+      const updatedSession = await db.getGameSession(sessionId);
+      if (!updatedSession) {
+        return NextResponse.json({ error: 'Error obteniendo sesión actualizada' }, { status: 500 });
+      }
+
       // Verificar si hubo cambios significativos en el mundo
       let worldChanges = null;
       try {
@@ -106,10 +290,18 @@ export async function POST(request: NextRequest) {
         // No es crítico si no podemos parsear los cambios
       }
 
+      // Generar y guardar tarjetas de cambios del mundo
+      if (worldChanges) {
+        const changeCards = generateWorldChangeCards(world, aiResponse.updatedWorld, worldChanges);
+        for (const card of changeCards) {
+          await db.addStoryEntry(sessionId, updatedSession.currentDay, 'world_change', card.content, card.metadata);
+        }
+      }
+
       // Avanzar día si es necesario
-      let newDay = session.currentDay;
-      if (aiResponse.shouldAdvanceDay && session.currentDay < scenario.maxDays) {
-        newDay = session.currentDay + 1;
+      let newDay = updatedSession.currentDay;
+      if (aiResponse.shouldAdvanceDay && updatedSession.currentDay < scenario.maxDays) {
+        newDay = updatedSession.currentDay + 1;
         await db.updateSessionDay(sessionId, newDay);
       }
 
@@ -118,13 +310,25 @@ export async function POST(request: NextRequest) {
         await db.completeSession(sessionId);
       }
 
+      // Obtener información temporal final para la respuesta
+      const finalTimeInfo = await db.getCurrentGameTime(sessionId);
+      
       return NextResponse.json({
         response: aiResponse.response,
         currentDay: newDay,
         maxDays: scenario.maxDays,
         gameEnded: aiResponse.gameEnded || newDay >= scenario.maxDays,
         shouldAdvanceDay: aiResponse.shouldAdvanceDay,
-        worldChanges: worldChanges
+        worldChanges: worldChanges,
+        narrativeHooks: aiResponse.narrativeHooks || [],
+        availableElements: aiResponse.availableElements || {
+          people: [],
+          objects: [],
+          locations: [],
+          conditions: []
+        },
+        timeInfo: finalTimeInfo,
+        minutesElapsed: aiResponse.minutesToAdd || 0
       });
     }
 
@@ -170,6 +374,17 @@ export async function POST(request: NextRequest) {
         rules: world.rules || [],
         currentState: world.currentState || {}
       });
+    }
+
+    if (action === 'get_financial_data') {
+      if (!sessionId) {
+        return NextResponse.json({ error: 'sessionId es requerido' }, { status: 400 });
+      }
+      
+      const db = getDatabase();
+      const financialSummary = await db.getFinancialSummary(sessionId);
+      
+      return NextResponse.json(financialSummary);
     }
 
     return NextResponse.json({ error: 'Acción no válida' }, { status: 400 });
