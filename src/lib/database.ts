@@ -502,15 +502,23 @@ Responde siempre en español y mantén la tensión.`,
       ORDER BY day ASC, timestamp ASC
     `, [sessionId]);
     
-    return rows.map((row: any) => ({
-      id: row.id,
-      sessionId: row.session_id,
-      day: row.day,
-      type: row.type,
-      content: row.content,
-      timestamp: new Date(row.timestamp),
-      metadata: row.metadata ? JSON.parse(row.metadata) : undefined
-    }));
+    return rows.map((row: any) => {
+      const entry = {
+        id: row.id,
+        sessionId: row.session_id,
+        day: row.day,
+        type: row.type,
+        content: row.content,
+        timestamp: new Date(row.timestamp),
+        metadata: row.metadata ? JSON.parse(row.metadata) : undefined
+      };
+      
+      if (row.metadata) {
+        console.log(`🎬 Retrieved ${row.type} message metadata from DB:`, entry.metadata);
+      }
+      
+      return entry;
+    });
   }
 
   async updateGameWorld(sessionId: string, world: Partial<GameWorld>): Promise<void> {

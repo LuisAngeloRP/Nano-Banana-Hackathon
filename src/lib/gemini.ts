@@ -43,6 +43,12 @@ class GeminiService {
       locations: string[];
       conditions: string[];
     };
+    sceneElements?: {
+      characters: string[];
+      objects: string[];
+      locations: string[];
+      description?: string;
+    };
     minutesToAdd?: number;
   }> {
     
@@ -89,6 +95,10 @@ INSTRUCCIONES:
 34. Actividades largas (trabajar, viajar): 60-240 minutos
 35. El tiempo es CRUCIAL para mantener coherencia narrativa
 36. SIEMPRE indica cuánto tiempo pasó en la narrativa
+37. MENCIONA EXPLÍCITAMENTE en tu narrativa los personajes, objetos y ubicaciones presentes
+38. USA frases como "Ves a [Personaje]", "Observas [Objeto]", "Te encuentras en [Ubicación]"
+39. INCLUYE en sceneElements SOLO los elementos que mencionas directamente en tu narrativa
+40. Los elementos en sceneElements deben coincidir EXACTAMENTE con los nombres en la base de datos
 
 FORMATO DE RESPUESTA:
 Responde SOLO con un JSON válido que contenga:
@@ -104,6 +114,12 @@ Responde SOLO con un JSON válido que contenga:
     "objects": ["Lista de objetos visibles que el jugador puede tomar o usar"],
     "locations": ["Lista de lugares accesibles desde la ubicación actual"],
     "conditions": ["Estado actual del jugador que afecta sus opciones"]
+  },
+  "sceneElements": {
+    "characters": ["Nombres exactos de personajes mencionados en la narrativa que deben mostrarse visualmente"],
+    "objects": ["Nombres exactos de objetos mencionados en la narrativa que deben mostrarse visualmente"],
+    "locations": ["Nombres exactos de ubicaciones mencionadas en la narrativa que deben mostrarse visualmente"],
+    "description": "Breve descripción de la escena visual para contexto"
   },
   "worldUpdates": {
     "characters": [
@@ -236,6 +252,7 @@ REGLA ABSOLUTA DE CONSISTENCIA NARRATIVA:
               locations: [],
               conditions: []
             },
+            sceneElements: undefined,
             minutesToAdd: 5
           };
         }
@@ -395,6 +412,7 @@ REGLA ABSOLUTA DE CONSISTENCIA NARRATIVA:
           locations: [],
           conditions: []
         },
+        sceneElements: parsed.sceneElements || undefined,
         minutesToAdd: parsed.minutesToAdd || 5 // Default a 5 minutos si no se especifica
       };
 
@@ -414,6 +432,7 @@ REGLA ABSOLUTA DE CONSISTENCIA NARRATIVA:
           locations: [],
           conditions: []
         },
+        sceneElements: undefined,
         minutesToAdd: 5
       };
     }

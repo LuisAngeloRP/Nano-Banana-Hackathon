@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/database';
 import { getGeminiService } from '@/lib/gemini';
+import { SceneParser } from '@/lib/sceneParser';
 import { GameWorld } from '@/types/game';
 
 // Función para generar tarjetas de cambios del mundo
@@ -259,8 +260,73 @@ export async function POST(request: NextRequest) {
         session.currentDay
       );
 
-      // Guardar respuesta de la IA
-      await db.addStoryEntry(sessionId, session.currentDay, 'ai', aiResponse.response);
+      // Procesar elementos visuales de la escena
+      let sceneMetadata = {};
+      try {
+        console.log('🎬 AI Response sceneElements:', aiResponse.sceneElements);
+        if (aiResponse.sceneElements) {
+          // Obtener datos del mundo actualizados para el procesamiento
+          const currentWorld = await db.getGameWorld(sessionId);
+          if (currentWorld) {
+            // Obtener imágenes de la biblioteca para enriquecer los datos del mundo
+            const charactersLibrary = await db.getCharactersFromLibrary(undefined, 1000);
+            const objectsLibrary = await db.getObjectsFromLibrary(undefined, 1000);
+            const locationsLibrary = await db.getLocationsFromLibrary(undefined, 1000);
+
+            // Enriquecer elementos del mundo con imágenes
+            const worldDataWithImages = {
+              characters: (currentWorld.characters || []).map(character => {
+                const libraryChar = charactersLibrary.find(c => 
+                  c.name.toLowerCase() === character.name.toLowerCase()
+                );
+                return {
+                  ...character,
+                  imageBase64: libraryChar?.imageBase64
+                };
+              }),
+              objects: (currentWorld.objects || []).map(object => {
+                const libraryObj = objectsLibrary.find(o => 
+                  o.name.toLowerCase() === object.name.toLowerCase()
+                );
+                return {
+                  ...object,
+                  imageBase64: libraryObj?.imageBase64
+                };
+              }),
+              locations: (currentWorld.locations || []).map(location => {
+                const libraryLoc = locationsLibrary.find(l => 
+                  l.name.toLowerCase() === location.name.toLowerCase()
+                );
+                return {
+                  ...location,
+                  imageBase64: libraryLoc?.imageBase64
+                };
+              })
+            };
+
+            // Procesar elementos de la escena
+            const processedScene = await SceneParser.processSceneElements(
+              aiResponse.sceneElements,
+              worldDataWithImages
+            );
+
+            sceneMetadata = SceneParser.generateSceneMetadata(processedScene);
+            console.log('🎬 Generated sceneMetadata:', sceneMetadata);
+          }
+        }
+      } catch (error) {
+        console.error('Error procesando elementos visuales:', error);
+      }
+
+      // Guardar respuesta de la IA con metadatos visuales
+      console.log('🎬 About to save sceneMetadata:', sceneMetadata);
+      await db.addStoryEntry(
+        sessionId, 
+        session.currentDay, 
+        'ai', 
+        aiResponse.response,
+        sceneMetadata
+      );
 
       // Actualizar estado del mundo
       if (Object.keys(aiResponse.updatedWorld).length > 0) {
@@ -417,7 +483,7 @@ export async function POST(request: NextRequest) {
     if (action === 'regenerate_images') {
       try {
         const db = getDatabase();
-        const { ImageGenerator } = await import('../../../lib/imageGenerator');
+        const { ImageGenerator } = await import('@/lib/imageGenerator');
         
         let regeneratedCount = 0;
         

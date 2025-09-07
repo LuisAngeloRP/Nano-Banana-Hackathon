@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Send, Calendar, Target, Loader2, Users, Package, MapPin, DollarSign, TrendingUp, TrendingDown, PanelRight, X } from 'lucide-react';
 import { ChatMessage, FinancialSummary } from '@/types/game';
+import SceneElements from './SceneElements';
 
 interface GameChatProps {
   sessionId: string;
@@ -476,6 +477,21 @@ export default function GameChat({ sessionId, onBackToMenu }: GameChatProps) {
                       </span>
                     </div>
                     <div className={`rounded-lg p-3 border ${getMessageStyles(message.type, message.metadata)}`}>
+                      {/* Elementos visuales de la escena */}
+                      {(() => {
+                        console.log('🎬 Message metadata:', message.metadata);
+                        console.log('🎬 SceneElements data:', message.metadata?.sceneElements);
+                        return null;
+                      })()}
+                      {message.metadata?.sceneElements && message.metadata.sceneElements.length > 0 && (
+                        <SceneElements 
+                          elements={message.metadata.sceneElements}
+                          description={message.metadata.sceneDescription}
+                          sessionId={sessionId}
+                        />
+                      )}
+
+                      {/* Contenido del mensaje */}
                       {message.type === 'world_change' ? (
                         <div className="prose prose-sm max-w-none">
                           {message.content.split('\n').map((line, index) => {
