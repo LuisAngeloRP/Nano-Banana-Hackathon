@@ -78,8 +78,55 @@ class Database {
       )
     `);
 
+    // Tabla de biblioteca de personajes reutilizables
+    await run(`
+      CREATE TABLE IF NOT EXISTS character_library (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        traits TEXT NOT NULL,
+        backstory TEXT,
+        personality TEXT,
+        category TEXT DEFAULT 'general',
+        usage_count INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Tabla de biblioteca de objetos reutilizables
+    await run(`
+      CREATE TABLE IF NOT EXISTS object_library (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        properties TEXT NOT NULL,
+        category TEXT DEFAULT 'general',
+        rarity TEXT DEFAULT 'common',
+        usage_count INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Tabla de biblioteca de ubicaciones reutilizables
+    await run(`
+      CREATE TABLE IF NOT EXISTS location_library (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        type TEXT DEFAULT 'general',
+        atmosphere TEXT,
+        connections_info TEXT,
+        usage_count INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     // Insertar escenarios iniciales si no existen
     await this.insertInitialScenarios();
+    
+    // Insertar contenido inicial en la biblioteca
+    await this.insertInitialLibraryContent();
+    
     this.initialized = true;
   }
 
@@ -166,6 +213,124 @@ Responde siempre en español y mantén la tensión.`,
           scenario.maxDays,
           scenario.isActive
         ]);
+      }
+    }
+  }
+
+  private async insertInitialLibraryContent() {
+    const get = promisify(this.db.get.bind(this.db)) as (sql: string, params?: any[]) => Promise<any>;
+    const run = promisify(this.db.run.bind(this.db)) as (sql: string, params?: any[]) => Promise<any>;
+
+    // Verificar si ya hay contenido en la biblioteca
+    const existingChars = await get('SELECT COUNT(*) as count FROM character_library') as { count: number };
+    
+    if (existingChars.count === 0) {
+      // Personajes iniciales
+      const initialCharacters = [
+        {
+          id: 'char_001',
+          name: 'Alex Blackwood',
+          description: 'Un empresario carismático con una misteriosa red de contactos',
+          traits: JSON.stringify(['carismático', 'misterioso', 'ambicioso', 'manipulador']),
+          backstory: 'Construyó su imperio desde la nada, pero nadie sabe exactamente cómo',
+          personality: 'Encantador en público, calculador en privado',
+          category: 'business'
+        },
+        {
+          id: 'char_002',
+          name: 'Dr. Elena Vasquez',
+          description: 'Científica brillante especializada en virología',
+          traits: JSON.stringify(['inteligente', 'determinada', 'obsesiva', 'perfeccionista']),
+          backstory: 'Perdió a su familia en una pandemia anterior, lo que la motivó a dedicarse a la ciencia',
+          personality: 'Metódica y dedicada, a veces sacrifica lo personal por su trabajo',
+          category: 'science'
+        },
+        {
+          id: 'char_003',
+          name: 'Marcus "The Wolf" Rodriguez',
+          description: 'Ex-militar convertido en superviviente urbano',
+          traits: JSON.stringify(['valiente', 'leal', 'pragmático', 'protector']),
+          backstory: 'Veterano de guerra que ahora usa sus habilidades para proteger a otros',
+          personality: 'Directo y honesto, siempre dispuesto a ayudar a los necesitados',
+          category: 'survival'
+        }
+      ];
+
+      for (const char of initialCharacters) {
+        await run(`
+          INSERT INTO character_library (id, name, description, traits, backstory, personality, category)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [char.id, char.name, char.description, char.traits, char.backstory, char.personality, char.category]);
+      }
+
+      // Objetos iniciales
+      const initialObjects = [
+        {
+          id: 'obj_001',
+          name: 'Smartphone con conexión satelital',
+          description: 'Un dispositivo de comunicación avanzado que funciona incluso sin torres de telefonía',
+          properties: JSON.stringify({ durability: 'alta', signal: 'satellite', battery: 'solar' }),
+          category: 'technology',
+          rarity: 'rare'
+        },
+        {
+          id: 'obj_002',
+          name: 'Kit de laboratorio portátil',
+          description: 'Conjunto básico de equipos para análisis químicos y biológicos',
+          properties: JSON.stringify({ accuracy: 'alta', portability: 'media', power: 'battery' }),
+          category: 'science',
+          rarity: 'uncommon'
+        },
+        {
+          id: 'obj_003',
+          name: 'Mochila de supervivencia',
+          description: 'Mochila táctica equipada con herramientas esenciales para supervivencia',
+          properties: JSON.stringify({ capacity: '50L', waterproof: true, contents: ['cuerda', 'linterna', 'navaja', 'botiquín'] }),
+          category: 'survival',
+          rarity: 'common'
+        }
+      ];
+
+      for (const obj of initialObjects) {
+        await run(`
+          INSERT INTO object_library (id, name, description, properties, category, rarity)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `, [obj.id, obj.name, obj.description, obj.properties, obj.category, obj.rarity]);
+      }
+
+      // Ubicaciones iniciales
+      const initialLocations = [
+        {
+          id: 'loc_001',
+          name: 'Centro Comercial Abandonado',
+          description: 'Un gran centro comercial con múltiples pisos, ahora vacío pero lleno de recursos potenciales',
+          type: 'urban',
+          atmosphere: 'Silencioso y polvoriento, con ecos lejanos y sombras largas',
+          connections_info: 'Conectado a estacionamiento subterráneo, oficinas corporativas y estación de metro'
+        },
+        {
+          id: 'loc_002',
+          name: 'Laboratorio Universitario',
+          description: 'Complejo de investigación bien equipado con tecnología de punta',
+          type: 'science',
+          atmosphere: 'Ambiente sterile y profesional, con el zumbido constante de equipos especializados',
+          connections_info: 'Conectado a biblioteca, dormitorios estudiantiles y hospital universitario'
+        },
+        {
+          id: 'loc_003',
+          name: 'Azotea de Rascacielos',
+          description: 'La cima de un edificio alto con vista panorámica de la ciudad',
+          type: 'strategic',
+          atmosphere: 'Viento constante y vista espectacular, sensación de libertad y exposición',
+          connections_info: 'Acceso por escaleras de emergencia, helipuerto, antenas de comunicación'
+        }
+      ];
+
+      for (const loc of initialLocations) {
+        await run(`
+          INSERT INTO location_library (id, name, description, type, atmosphere, connections_info)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `, [loc.id, loc.name, loc.description, loc.type, loc.atmosphere, loc.connections_info]);
       }
     }
   }
@@ -335,6 +500,181 @@ Responde siempre en español y mantén la tensión.`,
       SET is_completed = true, completed_at = CURRENT_TIMESTAMP 
       WHERE id = ?
     `, [sessionId]);
+  }
+
+  // Métodos para la biblioteca de personajes
+  async saveCharacterToLibrary(character: {
+    name: string;
+    description: string;
+    traits: string[];
+    backstory?: string;
+    personality?: string;
+    category?: string;
+  }): Promise<string> {
+    await this.ensureInitialized();
+    const run = promisify(this.db.run.bind(this.db)) as (sql: string, params?: any[]) => Promise<any>;
+    const characterId = `char_lib_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    await run(`
+      INSERT INTO character_library (id, name, description, traits, backstory, personality, category)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [
+      characterId,
+      character.name,
+      character.description,
+      JSON.stringify(character.traits),
+      character.backstory || '',
+      character.personality || '',
+      character.category || 'general'
+    ]);
+
+    return characterId;
+  }
+
+  async getCharactersFromLibrary(category?: string, limit: number = 10): Promise<any[]> {
+    await this.ensureInitialized();
+    const all = promisify(this.db.all.bind(this.db)) as (sql: string, params?: any[]) => Promise<any[]>;
+    
+    let query = 'SELECT * FROM character_library';
+    let params: any[] = [];
+    
+    if (category) {
+      query += ' WHERE category = ?';
+      params.push(category);
+    }
+    
+    query += ' ORDER BY usage_count DESC, created_at DESC LIMIT ?';
+    params.push(limit);
+    
+    const rows = await all(query, params);
+    
+    return rows.map((row: any) => ({
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      traits: JSON.parse(row.traits),
+      backstory: row.backstory,
+      personality: row.personality,
+      category: row.category,
+      usageCount: row.usage_count
+    }));
+  }
+
+  // Métodos para la biblioteca de objetos
+  async saveObjectToLibrary(object: {
+    name: string;
+    description: string;
+    properties: Record<string, any>;
+    category?: string;
+    rarity?: string;
+  }): Promise<string> {
+    await this.ensureInitialized();
+    const run = promisify(this.db.run.bind(this.db)) as (sql: string, params?: any[]) => Promise<any>;
+    const objectId = `obj_lib_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    await run(`
+      INSERT INTO object_library (id, name, description, properties, category, rarity)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [
+      objectId,
+      object.name,
+      object.description,
+      JSON.stringify(object.properties),
+      object.category || 'general',
+      object.rarity || 'common'
+    ]);
+
+    return objectId;
+  }
+
+  async getObjectsFromLibrary(category?: string, limit: number = 10): Promise<any[]> {
+    await this.ensureInitialized();
+    const all = promisify(this.db.all.bind(this.db)) as (sql: string, params?: any[]) => Promise<any[]>;
+    
+    let query = 'SELECT * FROM object_library';
+    let params: any[] = [];
+    
+    if (category) {
+      query += ' WHERE category = ?';
+      params.push(category);
+    }
+    
+    query += ' ORDER BY usage_count DESC, created_at DESC LIMIT ?';
+    params.push(limit);
+    
+    const rows = await all(query, params);
+    
+    return rows.map((row: any) => ({
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      properties: JSON.parse(row.properties),
+      category: row.category,
+      rarity: row.rarity,
+      usageCount: row.usage_count
+    }));
+  }
+
+  // Métodos para la biblioteca de ubicaciones
+  async saveLocationToLibrary(location: {
+    name: string;
+    description: string;
+    type?: string;
+    atmosphere?: string;
+    connectionsInfo?: string;
+  }): Promise<string> {
+    await this.ensureInitialized();
+    const run = promisify(this.db.run.bind(this.db)) as (sql: string, params?: any[]) => Promise<any>;
+    const locationId = `loc_lib_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    await run(`
+      INSERT INTO location_library (id, name, description, type, atmosphere, connections_info)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [
+      locationId,
+      location.name,
+      location.description,
+      location.type || 'general',
+      location.atmosphere || '',
+      location.connectionsInfo || ''
+    ]);
+
+    return locationId;
+  }
+
+  async getLocationsFromLibrary(type?: string, limit: number = 10): Promise<any[]> {
+    await this.ensureInitialized();
+    const all = promisify(this.db.all.bind(this.db)) as (sql: string, params?: any[]) => Promise<any[]>;
+    
+    let query = 'SELECT * FROM location_library';
+    let params: any[] = [];
+    
+    if (type) {
+      query += ' WHERE type = ?';
+      params.push(type);
+    }
+    
+    query += ' ORDER BY usage_count DESC, created_at DESC LIMIT ?';
+    params.push(limit);
+    
+    const rows = await all(query, params);
+    
+    return rows.map((row: any) => ({
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      type: row.type,
+      atmosphere: row.atmosphere,
+      connectionsInfo: row.connections_info,
+      usageCount: row.usage_count
+    }));
+  }
+
+  // Incrementar contador de uso
+  async incrementUsageCount(table: 'character_library' | 'object_library' | 'location_library', id: string): Promise<void> {
+    await this.ensureInitialized();
+    const run = promisify(this.db.run.bind(this.db)) as (sql: string, params?: any[]) => Promise<any>;
+    await run(`UPDATE ${table} SET usage_count = usage_count + 1 WHERE id = ?`, [id]);
   }
 }
 

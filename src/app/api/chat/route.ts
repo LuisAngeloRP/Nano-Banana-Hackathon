@@ -30,13 +30,18 @@ export async function POST(request: NextRequest) {
       // Actualizar el mundo en la base de datos
       await db.updateGameWorld(newSessionId, initialWorld);
       
-      // Crear entrada inicial del sistema
-      await db.addStoryEntry(newSessionId, 1, 'system', `Has comenzado: ${scenario.title}. ${scenario.description}`);
+      // Crear entrada inicial del sistema con la narrativa generada
+      const initialNarrative = initialWorld.currentState?.initialNarrative || 
+        `Has comenzado: ${scenario.title}. ${scenario.description}`;
+      
+      await db.addStoryEntry(newSessionId, 1, 'system', initialNarrative);
 
       return NextResponse.json({ 
         sessionId: newSessionId,
         scenario: scenario,
-        message: 'Sesión creada exitosamente'
+        initialNarrative: initialNarrative,
+        message: 'Sesión creada exitosamente',
+        showNarrativeImmediately: true
       });
     }
 

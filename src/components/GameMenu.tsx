@@ -4,16 +4,23 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { GameScenario } from '@/types/game';
-import { Play, Clock, Target, Sparkles } from 'lucide-react';
+import { Play, Clock, Target, Sparkles, ArrowRight } from 'lucide-react';
 
 interface GameMenuProps {
   onStartGame: (sessionId: string) => void;
+}
+
+interface InitialNarrativeModal {
+  sessionId: string;
+  narrative: string;
+  scenarioTitle: string;
 }
 
 export default function GameMenu({ onStartGame }: GameMenuProps) {
   const [scenarios, setScenarios] = useState<GameScenario[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedScenario, setSelectedScenario] = useState<string | null>(null);
+  const [showNarrativeModal, setShowNarrativeModal] = useState<InitialNarrativeModal | null>(null);
 
   useEffect(() => {
     loadScenarios();
@@ -55,7 +62,19 @@ export default function GameMenu({ onStartGame }: GameMenuProps) {
       }
 
       const data = await response.json();
-      onStartGame(data.sessionId);
+      
+      // Si hay narrativa inicial, mostrarla primero
+      if (data.initialNarrative && data.showNarrativeImmediately) {
+        const selectedScenarioData = scenarios.find(s => s.id === scenarioId);
+        setShowNarrativeModal({
+          sessionId: data.sessionId,
+          narrative: data.initialNarrative,
+          scenarioTitle: selectedScenarioData?.title || 'Tu Aventura'
+        });
+        setSelectedScenario(null);
+      } else {
+        onStartGame(data.sessionId);
+      }
     } catch (error) {
       console.error('Error iniciando juego:', error);
       setSelectedScenario(null);
@@ -77,6 +96,50 @@ export default function GameMenu({ onStartGame }: GameMenuProps) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-4">
+      {/* Modal de Narrativa Inicial */}
+      {showNarrativeModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <Card className="w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+            <CardHeader className="text-center">
+              <CardTitle className="text-2xl flex items-center justify-center gap-2">
+                <Sparkles className="w-6 h-6 text-blue-500" />
+                {showNarrativeModal.scenarioTitle}
+              </CardTitle>
+              <CardDescription>
+                Tu aventura está a punto de comenzar...
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <div className="text-2xl mb-2">🎭</div>
+                <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                  {showNarrativeModal.narrative}
+                </p>
+              </div>
+              <div className="flex gap-3 pt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowNarrativeModal(null)}
+                  className="flex-1"
+                >
+                  Volver al menú
+                </Button>
+                <Button
+                  onClick={() => {
+                    onStartGame(showNarrativeModal.sessionId);
+                    setShowNarrativeModal(null);
+                  }}
+                  className="flex-1"
+                >
+                  <ArrowRight className="w-4 h-4 mr-2" />
+                  Comenzar aventura
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8 mt-8">
